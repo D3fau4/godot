@@ -31,8 +31,22 @@ run `./scripts/create-switch-template.sh` in the root of the repo.
 ## How can I get help?
 Either make an issue on this repo, or join the [Discord](https://discordapp.com/invite/yUC3rUk)!
 
-# Credits
-* Thanks to devkitPro / switchbrew for producing devkitA64/libnx.
-* Extra special thanks to fincs from devkitPro - This port would have never been possible without their port of the open source nouveau graphics driver.
-* cpasjuste for help with development.
-* fhidalgosola/utnad for their port / help with development.
+The official documentation is hosted on [ReadTheDocs](https://docs.godotengine.org).
+It is maintained by the Godot community in its own [GitHub repository](https://github.com/godotengine/godot-docs).
+
+The [class reference](https://docs.godotengine.org/en/latest/classes/)
+is also accessible from the Godot editor.
+
+We also maintain official demos in their own [GitHub repository](https://github.com/godotengine/godot-demo-projects)
+as well as a list of [awesome Godot community resources](https://github.com/godotengine/awesome-godot).
+
+There are also a number of other
+[learning resources](https://docs.godotengine.org/en/latest/community/tutorials.html)
+provided by the community, such as text and video tutorials, demos, etc.
+Consult the [community channels](https://godotengine.org/community)
+for more information.
+
+[![Actions Build Status](https://github.com/godotengine/godot/workflows/Godot/badge.svg?branch=master)](https://github.com/godotengine/godot/actions)
+[![Code Triagers Badge](https://www.codetriage.com/godotengine/godot/badges/users.svg)](https://www.codetriage.com/godotengine/godot)
+[![Translate on Weblate](https://hosted.weblate.org/widgets/godot-engine/-/godot/svg-badge.svg)](https://hosted.weblate.org/engage/godot-engine/?utm_source=widget)
+[![TODOs](https://badgen.net/https/api.tickgit.com/badgen/github.com/godotengine/godot)](https://www.tickgit.com/browse?repo=github.com/godotengine/godot)

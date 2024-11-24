@@ -31,6 +31,7 @@
 #include "visual_server.h"
 
 #include "core/engine.h"
+#include "core/math/vertex_cache_optimizer.h"
 #include "core/method_bind_ext.gen.inc"
 #include "core/project_settings.h"
 
@@ -768,6 +769,14 @@ Error VisualServer::_surface_set_data(Array p_arrays, uint32_t p_format, uint32_
 				ERR_FAIL_COND_V(indices.size() == 0, ERR_INVALID_PARAMETER);
 				ERR_FAIL_COND_V(indices.size() != p_index_array_len, ERR_INVALID_PARAMETER);
 
+				// Vertex cache optimization?
+				if (p_format & ARRAY_FLAG_USE_VERTEX_CACHE_OPTIMIZATION) {
+					// Expecting triangles.
+					ERR_FAIL_COND_V((indices.size() % 3) != 0, ERR_INVALID_PARAMETER);
+					VertexCacheOptimizer opt;
+					opt.reorder_indices_pool(indices, indices.size() / 3, p_vertex_array_len);
+				}
+
 				/* determine whether using 16 or 32 bits indices */
 
 				PoolVector<int>::Read read = indices.read();
@@ -1030,47 +1039,28 @@ void VisualServer::mesh_surface_make_offsets_from_format(uint32_t p_format, int 
 	}
 }
 
-void VisualServer::mesh_add_surface_from_arrays(RID p_mesh, PrimitiveType p_primitive, const Array &p_arrays, const Array &p_blend_shapes, uint32_t p_compress_format) {
-	ERR_FAIL_INDEX(p_primitive, VS::PRIMITIVE_MAX);
-	ERR_FAIL_COND(p_arrays.size() != VS::ARRAY_MAX);
-
-	bool use_split_stream = GLOBAL_GET("rendering/misc/mesh_storage/split_stream") && !(p_compress_format & VS::ARRAY_FLAG_USE_DYNAMIC_UPDATE);
-
-	uint32_t format = 0;
-
-	// validation
-	int index_array_len = 0;
-	int array_len = 0;
+// This function is separated from the main mesh_add_surface_from_arrays() to allow finding the format WITHOUT creating data.
+// This is necessary for CPU meshes, where we may want to know the final format without creating final data.
+bool VisualServer::_mesh_find_format(VS::PrimitiveType p_primitive, const Array &p_arrays, const Array &p_blend_shapes, uint32_t p_compress_format, bool p_use_split_stream, uint32_t r_offsets[], int &r_attributes_base_offset, int &r_attributes_stride, int &r_positions_stride, uint32_t &r_format, int &r_index_array_len, int &r_array_len) {
+	ERR_FAIL_INDEX_V(p_primitive, VS::PRIMITIVE_MAX, false);
+	ERR_FAIL_COND_V(p_arrays.size() != VS::ARRAY_MAX, false);
 
 	for (int i = 0; i < p_arrays.size(); i++) {
 		if (p_arrays[i].get_type() == Variant::NIL) {
 			continue;
 		}
 
-		format |= (1 << i);
+		r_format |= (1 << i);
 
 		if (i == VS::ARRAY_VERTEX) {
-			Variant var = p_arrays[i];
-			switch (var.get_type()) {
-				case Variant::POOL_VECTOR2_ARRAY: {
-					PoolVector<Vector2> v2 = var;
-				} break;
-				case Variant::POOL_VECTOR3_ARRAY: {
-					PoolVector<Vector3> v3 = var;
-				} break;
-				default: {
-					Array v = var;
-				} break;
-			}
-
-			array_len = PoolVector3Array(p_arrays[i]).size();
-			ERR_FAIL_COND(array_len == 0);
+			r_array_len = PoolVector3Array(p_arrays[i]).size();
+			ERR_FAIL_COND_V(r_array_len == 0, false);
 		} else if (i == VS::ARRAY_INDEX) {
-			index_array_len = PoolIntArray(p_arrays[i]).size();
+			r_index_array_len = PoolIntArray(p_arrays[i]).size();
 		}
 	}
 
-	ERR_FAIL_COND((format & VS::ARRAY_FORMAT_VERTEX) == 0); // mandatory
+	ERR_FAIL_COND_V((r_format & VS::ARRAY_FORMAT_VERTEX) == 0, false); // mandatory
 
 	if (p_blend_shapes.size()) {
 		//validate format for morphs
@@ -1083,21 +1073,14 @@ void VisualServer::mesh_add_surface_from_arrays(RID p_mesh, PrimitiveType p_prim
 				}
 			}
 
-			ERR_FAIL_COND((bsformat) != (format & (VS::ARRAY_FORMAT_INDEX - 1)));
+			ERR_FAIL_COND_V((bsformat) != (r_format & (VS::ARRAY_FORMAT_INDEX - 1)), false);
 		}
 	}
 
-	uint32_t offsets[VS::ARRAY_MAX];
-	uint32_t strides[VS::ARRAY_MAX];
-
-	int attributes_base_offset = 0;
-	int attributes_stride = 0;
-	int positions_stride = 0;
-
 	for (int i = 0; i < VS::ARRAY_MAX; i++) {
-		offsets[i] = 0; //reset
+		r_offsets[i] = 0; //reset
 
-		if (!(format & (1 << i))) { // no array
+		if (!(r_format & (1 << i))) { // no array
 			continue;
 		}
 
@@ -1108,15 +1091,15 @@ void VisualServer::mesh_add_surface_from_arrays(RID p_mesh, PrimitiveType p_prim
 				Variant arr = p_arrays[0];
 				if (arr.get_type() == Variant::POOL_VECTOR2_ARRAY) {
 					elem_size = 2;
-					p_compress_format |= ARRAY_FLAG_USE_2D_VERTICES;
+					p_compress_format |= VS::ARRAY_FLAG_USE_2D_VERTICES;
 				} else if (arr.get_type() == Variant::POOL_VECTOR3_ARRAY) {
-					p_compress_format &= ~ARRAY_FLAG_USE_2D_VERTICES;
+					p_compress_format &= ~VS::ARRAY_FLAG_USE_2D_VERTICES;
 					elem_size = 3;
 				} else {
-					elem_size = (p_compress_format & ARRAY_FLAG_USE_2D_VERTICES) ? 2 : 3;
+					elem_size = (p_compress_format & VS::ARRAY_FLAG_USE_2D_VERTICES) ? 2 : 3;
 				}
 
-				if (p_compress_format & ARRAY_COMPRESS_VERTEX) {
+				if (p_compress_format & VS::ARRAY_COMPRESS_VERTEX) {
 					elem_size *= sizeof(int16_t);
 				} else {
 					elem_size *= sizeof(float);
@@ -1127,94 +1110,94 @@ void VisualServer::mesh_add_surface_from_arrays(RID p_mesh, PrimitiveType p_prim
 					elem_size = 8;
 				}
 
-				offsets[i] = 0;
-				positions_stride = elem_size;
-				if (use_split_stream) {
-					attributes_base_offset = elem_size * array_len;
+				r_offsets[i] = 0;
+				r_positions_stride = elem_size;
+				if (p_use_split_stream) {
+					r_attributes_base_offset = elem_size * r_array_len;
 				} else {
-					attributes_base_offset = elem_size;
+					r_attributes_base_offset = elem_size;
 				}
 
 			} break;
 			case VS::ARRAY_NORMAL: {
-				if (p_compress_format & ARRAY_FLAG_USE_OCTAHEDRAL_COMPRESSION) {
+				if (p_compress_format & VS::ARRAY_FLAG_USE_OCTAHEDRAL_COMPRESSION) {
 					// normal will always be oct32 (4 byte) encoded
 					// UNLESS tangent exists and is also compressed
 					// then it will be oct16 encoded along with tangent
-					if ((p_compress_format & ARRAY_COMPRESS_NORMAL) && (format & ARRAY_FORMAT_TANGENT) && (p_compress_format & ARRAY_COMPRESS_TANGENT)) {
+					if ((p_compress_format & VS::ARRAY_COMPRESS_NORMAL) && (r_format & VS::ARRAY_FORMAT_TANGENT) && (p_compress_format & VS::ARRAY_COMPRESS_TANGENT)) {
 						elem_size = sizeof(uint8_t) * 2;
 					} else {
 						elem_size = sizeof(uint16_t) * 2;
 					}
 				} else {
-					if (p_compress_format & ARRAY_COMPRESS_NORMAL) {
+					if (p_compress_format & VS::ARRAY_COMPRESS_NORMAL) {
 						elem_size = sizeof(uint32_t);
 					} else {
 						elem_size = sizeof(float) * 3;
 					}
 				}
-				offsets[i] = attributes_base_offset + attributes_stride;
-				attributes_stride += elem_size;
+				r_offsets[i] = r_attributes_base_offset + r_attributes_stride;
+				r_attributes_stride += elem_size;
 
 			} break;
 
 			case VS::ARRAY_TANGENT: {
-				if (p_compress_format & ARRAY_FLAG_USE_OCTAHEDRAL_COMPRESSION) {
-					if (p_compress_format & ARRAY_COMPRESS_TANGENT && (format & ARRAY_FORMAT_NORMAL) && (p_compress_format & ARRAY_COMPRESS_NORMAL)) {
+				if (p_compress_format & VS::ARRAY_FLAG_USE_OCTAHEDRAL_COMPRESSION) {
+					if (p_compress_format & VS::ARRAY_COMPRESS_TANGENT && (r_format & VS::ARRAY_FORMAT_NORMAL) && (p_compress_format & VS::ARRAY_COMPRESS_NORMAL)) {
 						elem_size = sizeof(uint8_t) * 2;
 					} else {
 						elem_size = sizeof(uint16_t) * 2;
 					}
 				} else {
-					if (p_compress_format & ARRAY_COMPRESS_TANGENT) {
+					if (p_compress_format & VS::ARRAY_COMPRESS_TANGENT) {
 						elem_size = sizeof(uint32_t);
 					} else {
 						elem_size = sizeof(float) * 4;
 					}
 				}
-				offsets[i] = attributes_base_offset + attributes_stride;
-				attributes_stride += elem_size;
+				r_offsets[i] = r_attributes_base_offset + r_attributes_stride;
+				r_attributes_stride += elem_size;
 
 			} break;
 			case VS::ARRAY_COLOR: {
-				if (p_compress_format & ARRAY_COMPRESS_COLOR) {
+				if (p_compress_format & VS::ARRAY_COMPRESS_COLOR) {
 					elem_size = sizeof(uint32_t);
 				} else {
 					elem_size = sizeof(float) * 4;
 				}
-				offsets[i] = attributes_base_offset + attributes_stride;
-				attributes_stride += elem_size;
+				r_offsets[i] = r_attributes_base_offset + r_attributes_stride;
+				r_attributes_stride += elem_size;
 
 			} break;
 			case VS::ARRAY_TEX_UV: {
-				if (p_compress_format & ARRAY_COMPRESS_TEX_UV) {
+				if (p_compress_format & VS::ARRAY_COMPRESS_TEX_UV) {
 					elem_size = sizeof(uint32_t);
 				} else {
 					elem_size = sizeof(float) * 2;
 				}
-				offsets[i] = attributes_base_offset + attributes_stride;
-				attributes_stride += elem_size;
+				r_offsets[i] = r_attributes_base_offset + r_attributes_stride;
+				r_attributes_stride += elem_size;
 
 			} break;
 
 			case VS::ARRAY_TEX_UV2: {
-				if (p_compress_format & ARRAY_COMPRESS_TEX_UV2) {
+				if (p_compress_format & VS::ARRAY_COMPRESS_TEX_UV2) {
 					elem_size = sizeof(uint32_t);
 				} else {
 					elem_size = sizeof(float) * 2;
 				}
-				offsets[i] = attributes_base_offset + attributes_stride;
-				attributes_stride += elem_size;
+				r_offsets[i] = r_attributes_base_offset + r_attributes_stride;
+				r_attributes_stride += elem_size;
 
 			} break;
 			case VS::ARRAY_WEIGHTS: {
-				if (p_compress_format & ARRAY_COMPRESS_WEIGHTS) {
+				if (p_compress_format & VS::ARRAY_COMPRESS_WEIGHTS) {
 					elem_size = sizeof(uint16_t) * 4;
 				} else {
 					elem_size = sizeof(float) * 4;
 				}
-				offsets[i] = attributes_base_offset + attributes_stride;
-				attributes_stride += elem_size;
+				r_offsets[i] = r_attributes_base_offset + r_attributes_stride;
+				r_attributes_stride += elem_size;
 
 			} break;
 			case VS::ARRAY_BONES: {
@@ -1230,36 +1213,87 @@ void VisualServer::mesh_add_surface_from_arrays(RID p_mesh, PrimitiveType p_prim
 				}
 
 				if (max_bone > 255) {
-					p_compress_format |= ARRAY_FLAG_USE_16_BIT_BONES;
+					p_compress_format |= VS::ARRAY_FLAG_USE_16_BIT_BONES;
 					elem_size = sizeof(uint16_t) * 4;
 				} else {
-					p_compress_format &= ~ARRAY_FLAG_USE_16_BIT_BONES;
+					p_compress_format &= ~VS::ARRAY_FLAG_USE_16_BIT_BONES;
 					elem_size = sizeof(uint32_t);
 				}
-				offsets[i] = attributes_base_offset + attributes_stride;
-				attributes_stride += elem_size;
+				r_offsets[i] = r_attributes_base_offset + r_attributes_stride;
+				r_attributes_stride += elem_size;
 
 			} break;
 			case VS::ARRAY_INDEX: {
-				if (index_array_len <= 0) {
+				if (r_index_array_len <= 0) {
 					ERR_PRINT("index_array_len==NO_INDEX_ARRAY");
 					break;
 				}
 				/* determine whether using 16 or 32 bits indices */
-				if (array_len >= (1 << 16)) {
+				if (r_array_len >= (1 << 16)) {
 					elem_size = 4;
 
 				} else {
 					elem_size = 2;
 				}
-				offsets[i] = elem_size;
+				r_offsets[i] = elem_size;
 				continue;
 			}
 			default: {
-				ERR_FAIL();
+				ERR_FAIL_V(false);
 			}
 		}
 	}
+
+	uint32_t mask = (1 << VS::ARRAY_MAX) - 1;
+	r_format |= (~mask) & p_compress_format; //make the full format
+
+	return true;
+}
+
+uint32_t VisualServer::mesh_find_format_from_arrays(PrimitiveType p_primitive, const Array &p_arrays, const Array &p_blend_shapes, uint32_t p_compress_format) {
+	bool use_split_stream = GLOBAL_GET("rendering/misc/mesh_storage/split_stream") && !(p_compress_format & VS::ARRAY_FLAG_USE_DYNAMIC_UPDATE);
+
+	uint32_t offsets[VS::ARRAY_MAX];
+
+	int attributes_base_offset = 0;
+	int attributes_stride = 0;
+	int positions_stride = 0;
+
+	uint32_t format = 0;
+
+	// validation
+	int index_array_len = 0;
+	int array_len = 0;
+
+	bool res = _mesh_find_format(p_primitive, p_arrays, p_blend_shapes, p_compress_format, use_split_stream, offsets, attributes_base_offset, attributes_stride, positions_stride, format, index_array_len, array_len);
+	ERR_FAIL_COND_V(!res, 0);
+	return format;
+}
+
+void VisualServer::mesh_add_surface_from_arrays(RID p_mesh, PrimitiveType p_primitive, const Array &p_arrays, const Array &p_blend_shapes, uint32_t p_compress_format) {
+	bool use_split_stream = GLOBAL_GET("rendering/misc/mesh_storage/split_stream") && !(p_compress_format & VS::ARRAY_FLAG_USE_DYNAMIC_UPDATE);
+
+	uint32_t offsets[VS::ARRAY_MAX];
+
+	int attributes_base_offset = 0;
+	int attributes_stride = 0;
+	int positions_stride = 0;
+
+	uint32_t format = 0;
+
+	// validation
+	int index_array_len = 0;
+	int array_len = 0;
+
+	// Only implemented for triangles.
+	if (p_primitive != PrimitiveType::PRIMITIVE_TRIANGLES) {
+		p_compress_format &= ~ARRAY_FLAG_USE_VERTEX_CACHE_OPTIMIZATION;
+	}
+
+	bool res = _mesh_find_format(p_primitive, p_arrays, p_blend_shapes, p_compress_format, use_split_stream, offsets, attributes_base_offset, attributes_stride, positions_stride, format, index_array_len, array_len);
+	ERR_FAIL_COND(!res);
+
+	uint32_t strides[VS::ARRAY_MAX];
 
 	if (use_split_stream) {
 		strides[VS::ARRAY_VERTEX] = positions_stride;
@@ -1271,9 +1305,6 @@ void VisualServer::mesh_add_surface_from_arrays(RID p_mesh, PrimitiveType p_prim
 			strides[i] = positions_stride + attributes_stride;
 		}
 	}
-
-	uint32_t mask = (1 << ARRAY_MAX) - 1;
-	format |= (~mask) & p_compress_format; //make the full format
 
 	int array_size = (positions_stride + attributes_stride) * array_len;
 
@@ -1932,6 +1963,10 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("multimesh_set_visible_instances", "multimesh", "visible"), &VisualServer::multimesh_set_visible_instances);
 	ClassDB::bind_method(D_METHOD("multimesh_get_visible_instances", "multimesh"), &VisualServer::multimesh_get_visible_instances);
 	ClassDB::bind_method(D_METHOD("multimesh_set_as_bulk_array", "multimesh", "array"), &VisualServer::multimesh_set_as_bulk_array);
+	ClassDB::bind_method(D_METHOD("multimesh_set_as_bulk_array_interpolated", "multimesh", "array", "array_previous"), &VisualServer::multimesh_set_as_bulk_array_interpolated);
+	ClassDB::bind_method(D_METHOD("multimesh_set_physics_interpolated", "multimesh", "interpolated"), &VisualServer::multimesh_set_physics_interpolated);
+	ClassDB::bind_method(D_METHOD("multimesh_set_physics_interpolation_quality", "multimesh", "quality"), &VisualServer::multimesh_set_physics_interpolation_quality);
+	ClassDB::bind_method(D_METHOD("multimesh_instance_reset_physics_interpolation", "multimesh", "index"), &VisualServer::multimesh_instance_reset_physics_interpolation);
 #ifndef _3D_DISABLED
 	ClassDB::bind_method(D_METHOD("immediate_create"), &VisualServer::immediate_create);
 	ClassDB::bind_method(D_METHOD("immediate_begin", "immediate", "primitive", "texture"), &VisualServer::immediate_begin, DEFVAL(RID()));
@@ -2136,6 +2171,8 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("instance_set_scenario", "instance", "scenario"), &VisualServer::instance_set_scenario);
 	ClassDB::bind_method(D_METHOD("instance_set_layer_mask", "instance", "mask"), &VisualServer::instance_set_layer_mask);
 	ClassDB::bind_method(D_METHOD("instance_set_transform", "instance", "transform"), &VisualServer::instance_set_transform);
+	ClassDB::bind_method(D_METHOD("instance_set_interpolated", "instance", "interpolated"), &VisualServer::instance_set_interpolated);
+	ClassDB::bind_method(D_METHOD("instance_reset_physics_interpolation", "instance"), &VisualServer::instance_reset_physics_interpolation);
 	ClassDB::bind_method(D_METHOD("instance_attach_object_instance_id", "instance", "id"), &VisualServer::instance_attach_object_instance_id);
 	ClassDB::bind_method(D_METHOD("instance_set_blend_shape_weight", "instance", "shape", "weight"), &VisualServer::instance_set_blend_shape_weight);
 	ClassDB::bind_method(D_METHOD("instance_set_surface_material", "instance", "surface", "material"), &VisualServer::instance_set_surface_material);
@@ -2149,8 +2186,6 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("instance_geometry_set_cast_shadows_setting", "instance", "shadow_casting_setting"), &VisualServer::instance_geometry_set_cast_shadows_setting);
 	ClassDB::bind_method(D_METHOD("instance_geometry_set_material_override", "instance", "material"), &VisualServer::instance_geometry_set_material_override);
 	ClassDB::bind_method(D_METHOD("instance_geometry_set_material_overlay", "instance", "material"), &VisualServer::instance_geometry_set_material_overlay);
-	ClassDB::bind_method(D_METHOD("instance_geometry_set_draw_range", "instance", "min", "max", "min_margin", "max_margin"), &VisualServer::instance_geometry_set_draw_range);
-	ClassDB::bind_method(D_METHOD("instance_geometry_set_as_instance_lod", "instance", "as_lod_of_instance"), &VisualServer::instance_geometry_set_as_instance_lod);
 
 	ClassDB::bind_method(D_METHOD("instances_cull_aabb", "aabb", "scenario"), &VisualServer::_instances_cull_aabb_bind, DEFVAL(RID()));
 	ClassDB::bind_method(D_METHOD("instances_cull_ray", "from", "to", "scenario"), &VisualServer::_instances_cull_ray_bind, DEFVAL(RID()));
@@ -2190,10 +2225,15 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("canvas_item_set_z_index", "item", "z_index"), &VisualServer::canvas_item_set_z_index);
 	ClassDB::bind_method(D_METHOD("canvas_item_set_z_as_relative_to_parent", "item", "enabled"), &VisualServer::canvas_item_set_z_as_relative_to_parent);
 	ClassDB::bind_method(D_METHOD("canvas_item_set_copy_to_backbuffer", "item", "enabled", "rect"), &VisualServer::canvas_item_set_copy_to_backbuffer);
+	ClassDB::bind_method(D_METHOD("canvas_item_set_interpolated", "item", "interpolated"), &VisualServer::canvas_item_set_interpolated);
+	ClassDB::bind_method(D_METHOD("canvas_item_reset_physics_interpolation", "item"), &VisualServer::canvas_item_reset_physics_interpolation);
+	ClassDB::bind_method(D_METHOD("canvas_item_transform_physics_interpolation", "item", "xform"), &VisualServer::canvas_item_transform_physics_interpolation);
 	ClassDB::bind_method(D_METHOD("canvas_item_clear", "item"), &VisualServer::canvas_item_clear);
 	ClassDB::bind_method(D_METHOD("canvas_item_set_draw_index", "item", "index"), &VisualServer::canvas_item_set_draw_index);
 	ClassDB::bind_method(D_METHOD("canvas_item_set_material", "item", "material"), &VisualServer::canvas_item_set_material);
 	ClassDB::bind_method(D_METHOD("canvas_item_set_use_parent_material", "item", "enabled"), &VisualServer::canvas_item_set_use_parent_material);
+	ClassDB::bind_method(D_METHOD("debug_canvas_item_get_rect", "item"), &VisualServer::debug_canvas_item_get_rect);
+	ClassDB::bind_method(D_METHOD("debug_canvas_item_get_local_bound", "item"), &VisualServer::debug_canvas_item_get_local_bound);
 	ClassDB::bind_method(D_METHOD("canvas_light_create"), &VisualServer::canvas_light_create);
 	ClassDB::bind_method(D_METHOD("canvas_light_attach_to_canvas", "light", "canvas"), &VisualServer::canvas_light_attach_to_canvas);
 	ClassDB::bind_method(D_METHOD("canvas_light_set_enabled", "light", "enabled"), &VisualServer::canvas_light_set_enabled);
@@ -2215,6 +2255,9 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("canvas_light_set_shadow_filter", "light", "filter"), &VisualServer::canvas_light_set_shadow_filter);
 	ClassDB::bind_method(D_METHOD("canvas_light_set_shadow_color", "light", "color"), &VisualServer::canvas_light_set_shadow_color);
 	ClassDB::bind_method(D_METHOD("canvas_light_set_shadow_smooth", "light", "smooth"), &VisualServer::canvas_light_set_shadow_smooth);
+	ClassDB::bind_method(D_METHOD("canvas_light_set_interpolated", "light", "interpolated"), &VisualServer::canvas_light_set_interpolated);
+	ClassDB::bind_method(D_METHOD("canvas_light_reset_physics_interpolation", "light"), &VisualServer::canvas_light_reset_physics_interpolation);
+	ClassDB::bind_method(D_METHOD("canvas_light_transform_physics_interpolation", "light", "xform"), &VisualServer::canvas_light_transform_physics_interpolation);
 
 	ClassDB::bind_method(D_METHOD("canvas_light_occluder_create"), &VisualServer::canvas_light_occluder_create);
 	ClassDB::bind_method(D_METHOD("canvas_light_occluder_attach_to_canvas", "occluder", "canvas"), &VisualServer::canvas_light_occluder_attach_to_canvas);
@@ -2222,6 +2265,9 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("canvas_light_occluder_set_polygon", "occluder", "polygon"), &VisualServer::canvas_light_occluder_set_polygon);
 	ClassDB::bind_method(D_METHOD("canvas_light_occluder_set_transform", "occluder", "transform"), &VisualServer::canvas_light_occluder_set_transform);
 	ClassDB::bind_method(D_METHOD("canvas_light_occluder_set_light_mask", "occluder", "mask"), &VisualServer::canvas_light_occluder_set_light_mask);
+	ClassDB::bind_method(D_METHOD("canvas_light_occluder_set_interpolated", "occluder", "interpolated"), &VisualServer::canvas_light_occluder_set_interpolated);
+	ClassDB::bind_method(D_METHOD("canvas_light_occluder_reset_physics_interpolation", "occluder"), &VisualServer::canvas_light_occluder_reset_physics_interpolation);
+	ClassDB::bind_method(D_METHOD("canvas_light_occluder_transform_physics_interpolation", "occluder", "xform"), &VisualServer::canvas_light_occluder_transform_physics_interpolation);
 
 	ClassDB::bind_method(D_METHOD("canvas_occluder_polygon_create"), &VisualServer::canvas_occluder_polygon_create);
 	ClassDB::bind_method(D_METHOD("canvas_occluder_polygon_set_shape", "occluder_polygon", "shape", "closed"), &VisualServer::canvas_occluder_polygon_set_shape);
@@ -2362,6 +2408,7 @@ void VisualServer::_bind_methods() {
 	BIND_ENUM_CONSTANT(LIGHT_PARAM_SHADOW_NORMAL_BIAS);
 	BIND_ENUM_CONSTANT(LIGHT_PARAM_SHADOW_BIAS);
 	BIND_ENUM_CONSTANT(LIGHT_PARAM_SHADOW_BIAS_SPLIT_SCALE);
+	BIND_ENUM_CONSTANT(LIGHT_PARAM_SHADOW_FADE_START);
 	BIND_ENUM_CONSTANT(LIGHT_PARAM_MAX);
 
 	BIND_ENUM_CONSTANT(LIGHT_BAKE_DISABLED);
@@ -2375,6 +2422,7 @@ void VisualServer::_bind_methods() {
 
 	BIND_ENUM_CONSTANT(LIGHT_DIRECTIONAL_SHADOW_ORTHOGONAL);
 	BIND_ENUM_CONSTANT(LIGHT_DIRECTIONAL_SHADOW_PARALLEL_2_SPLITS);
+	BIND_ENUM_CONSTANT(LIGHT_DIRECTIONAL_SHADOW_PARALLEL_3_SPLITS);
 	BIND_ENUM_CONSTANT(LIGHT_DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS);
 	BIND_ENUM_CONSTANT(LIGHT_DIRECTIONAL_SHADOW_DEPTH_RANGE_STABLE);
 	BIND_ENUM_CONSTANT(LIGHT_DIRECTIONAL_SHADOW_DEPTH_RANGE_OPTIMIZED);
@@ -2487,6 +2535,8 @@ void VisualServer::_bind_methods() {
 	BIND_ENUM_CONSTANT(MULTIMESH_CUSTOM_DATA_NONE);
 	BIND_ENUM_CONSTANT(MULTIMESH_CUSTOM_DATA_8BIT);
 	BIND_ENUM_CONSTANT(MULTIMESH_CUSTOM_DATA_FLOAT);
+	BIND_ENUM_CONSTANT(MULTIMESH_INTERP_QUALITY_FAST);
+	BIND_ENUM_CONSTANT(MULTIMESH_INTERP_QUALITY_HIGH);
 
 	BIND_ENUM_CONSTANT(REFLECTION_PROBE_UPDATE_ONCE);
 	BIND_ENUM_CONSTANT(REFLECTION_PROBE_UPDATE_ALWAYS);
@@ -2694,6 +2744,7 @@ VisualServer::VisualServer() {
 	GLOBAL_DEF("rendering/batching/options/use_batching", true);
 	GLOBAL_DEF_RST("rendering/batching/options/use_batching_in_editor", true);
 	GLOBAL_DEF("rendering/batching/options/single_rect_fallback", false);
+	GLOBAL_DEF("rendering/batching/options/use_multirect", true);
 	GLOBAL_DEF("rendering/batching/parameters/max_join_item_commands", 16);
 	GLOBAL_DEF("rendering/batching/parameters/colored_vertex_format_threshold", 0.25f);
 	GLOBAL_DEF("rendering/batching/lights/scissor_area_threshold", 1.0f);
@@ -2710,7 +2761,7 @@ VisualServer::VisualServer() {
 
 	ProjectSettings::get_singleton()->set_custom_property_info("rendering/batching/parameters/max_join_item_commands", PropertyInfo(Variant::INT, "rendering/batching/parameters/max_join_item_commands", PROPERTY_HINT_RANGE, "0,65535"));
 	ProjectSettings::get_singleton()->set_custom_property_info("rendering/batching/parameters/colored_vertex_format_threshold", PropertyInfo(Variant::REAL, "rendering/batching/parameters/colored_vertex_format_threshold", PROPERTY_HINT_RANGE, "0.0,1.0,0.01"));
-	ProjectSettings::get_singleton()->set_custom_property_info("rendering/batching/parameters/batch_buffer_size", PropertyInfo(Variant::INT, "rendering/batching/parameters/batch_buffer_size", PROPERTY_HINT_RANGE, "1024,65535,1024"));
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/batching/parameters/batch_buffer_size", PropertyInfo(Variant::INT, "rendering/batching/parameters/batch_buffer_size", PROPERTY_HINT_RANGE, "8192,65536,1024"));
 	ProjectSettings::get_singleton()->set_custom_property_info("rendering/batching/lights/scissor_area_threshold", PropertyInfo(Variant::REAL, "rendering/batching/lights/scissor_area_threshold", PROPERTY_HINT_RANGE, "0.0,1.0"));
 	ProjectSettings::get_singleton()->set_custom_property_info("rendering/batching/lights/max_join_items", PropertyInfo(Variant::INT, "rendering/batching/lights/max_join_items", PROPERTY_HINT_RANGE, "0,512"));
 	ProjectSettings::get_singleton()->set_custom_property_info("rendering/batching/parameters/item_reordering_lookahead", PropertyInfo(Variant::INT, "rendering/batching/parameters/item_reordering_lookahead", PROPERTY_HINT_RANGE, "0,256"));

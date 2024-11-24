@@ -72,6 +72,8 @@ future: no idea
 
  */
 
+VARIANT_ENUM_CAST(Spatial::MergingMode);
+
 SpatialGizmo::SpatialGizmo() {
 }
 
@@ -162,6 +164,14 @@ void Spatial::_notification(int p_what) {
 					data.dirty = DIRTY_VECTORS; //global is always dirty upon entering a scene
 				}
 				data.toplevel_active = true;
+			}
+
+			if (data.merging_mode == MERGING_MODE_INHERIT) {
+				bool merging_allowed = true; // Root node default is for merging to be on
+				if (data.parent) {
+					merging_allowed = data.parent->is_merging_allowed();
+				}
+				_propagate_merging_allowed(merging_allowed);
 			}
 
 			data.dirty |= DIRTY_GLOBAL; //global is always dirty upon entering a scene
@@ -274,6 +284,7 @@ void Spatial::set_global_rotation(const Vector3 &p_euler_rad) {
 void Spatial::set_transform(const Transform &p_transform) {
 	data.local_transform = p_transform;
 	data.dirty |= DIRTY_VECTORS;
+	data.dirty &= ~DIRTY_LOCAL;
 	_change_notify("translation");
 	_change_notify("rotation");
 	_change_notify("rotation_degrees");
@@ -348,7 +359,7 @@ void Spatial::_disable_client_physics_interpolation() {
 }
 
 Transform Spatial::_get_global_transform_interpolated(real_t p_interpolation_fraction) {
-	ERR_FAIL_NULL_V(is_inside_tree(), Transform());
+	ERR_FAIL_COND_V(!is_inside_tree(), Transform());
 
 	// set in motion the mechanisms for client side interpolation if not already active
 	if (!_is_physics_interpolated_client_side()) {
@@ -396,7 +407,14 @@ Transform Spatial::get_global_transform_interpolated() {
 	// Pass through if physics interpolation is switched off.
 	// This is a convenience, as it allows you to easy turn off interpolation
 	// without changing any code.
-	if (Engine::get_singleton()->is_in_physics_frame() || !is_physics_interpolated_and_enabled()) {
+	if (!is_physics_interpolated_and_enabled()) {
+		return get_global_transform();
+	}
+
+	// If we are in the physics frame, the interpolated global transform is meaningless.
+	// However, there is an exception, we may want to use this as a means of starting off the client
+	// interpolation pump if not already started (when _is_physics_interpolated_client_side() is false).
+	if (Engine::get_singleton()->is_in_physics_frame() && _is_physics_interpolated_client_side()) {
 		return get_global_transform();
 	}
 
@@ -670,6 +688,35 @@ void Spatial::_propagate_visibility_changed() {
 	}
 }
 
+void Spatial::_propagate_merging_allowed(bool p_merging_allowed) {
+	switch (data.merging_mode) {
+		case MERGING_MODE_INHERIT:
+			// Keep the parent p_allow_merging.
+			break;
+		case MERGING_MODE_OFF: {
+			p_merging_allowed = false;
+		} break;
+		case MERGING_MODE_ON: {
+			p_merging_allowed = true;
+		} break;
+	}
+
+	// No change? No need to propagate further.
+	if (data.merging_allowed == p_merging_allowed) {
+		return;
+	}
+
+	data.merging_allowed = p_merging_allowed;
+
+	for (List<Spatial *>::Element *E = data.children.front(); E; E = E->next()) {
+		Spatial *c = E->get();
+		if (!c) {
+			continue;
+		}
+		c->_propagate_merging_allowed(p_merging_allowed);
+	}
+}
+
 void Spatial::show() {
 	if (data.visible) {
 		return;
@@ -849,6 +896,36 @@ bool Spatial::is_local_transform_notification_enabled() const {
 	return data.notify_local_transform;
 }
 
+void Spatial::set_merging_mode(MergingMode p_mode) {
+	if (data.merging_mode == p_mode) {
+		return;
+	}
+
+	data.merging_mode = p_mode;
+
+	bool merging_allowed = true; // Default for root node.
+
+	switch (p_mode) {
+		case MERGING_MODE_INHERIT: {
+			if (get_parent_spatial()) {
+				merging_allowed = get_parent_spatial()->is_merging_allowed();
+			}
+		} break;
+		case MERGING_MODE_OFF: {
+			merging_allowed = false;
+		} break;
+		case MERGING_MODE_ON: {
+			merging_allowed = true;
+		} break;
+	}
+
+	_propagate_merging_allowed(merging_allowed);
+}
+
+void Spatial::set_lod_range(float p_range) {
+	data.lod_range = p_range;
+}
+
 void Spatial::force_update_transform() {
 	ERR_FAIL_COND(!is_inside_tree());
 	if (!xform_change.in_list()) {
@@ -924,6 +1001,12 @@ void Spatial::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("look_at", "target", "up"), &Spatial::look_at);
 	ClassDB::bind_method(D_METHOD("look_at_from_position", "position", "target", "up"), &Spatial::look_at_from_position);
 
+	ClassDB::bind_method(D_METHOD("set_merging_mode", "mode"), &Spatial::set_merging_mode);
+	ClassDB::bind_method(D_METHOD("get_merging_mode"), &Spatial::get_merging_mode);
+
+	ClassDB::bind_method(D_METHOD("set_lod_range", "range"), &Spatial::set_lod_range);
+	ClassDB::bind_method(D_METHOD("get_lod_range"), &Spatial::get_lod_range);
+
 	ClassDB::bind_method(D_METHOD("to_local", "global_point"), &Spatial::to_local);
 	ClassDB::bind_method(D_METHOD("to_global", "local_point"), &Spatial::to_global);
 
@@ -934,12 +1017,18 @@ void Spatial::_bind_methods() {
 	BIND_CONSTANT(NOTIFICATION_ENTER_GAMEPLAY);
 	BIND_CONSTANT(NOTIFICATION_EXIT_GAMEPLAY);
 
+	BIND_ENUM_CONSTANT(MERGING_MODE_INHERIT);
+	BIND_ENUM_CONSTANT(MERGING_MODE_OFF);
+	BIND_ENUM_CONSTANT(MERGING_MODE_ON);
+
 	ADD_GROUP("Transform", "");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "position", PROPERTY_HINT_NONE, "", 0), "set_translation", "get_translation");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "translation", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR), "set_translation", "get_translation");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "rotation_degrees", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR), "set_rotation_degrees", "get_rotation_degrees");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "rotation", PROPERTY_HINT_NONE, "", 0), "set_rotation", "get_rotation");
-	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "scale", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR), "set_scale", "get_scale");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "scale", PROPERTY_HINT_LINK, "", PROPERTY_USAGE_EDITOR), "set_scale", "get_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::TRANSFORM, "global_transform", PROPERTY_HINT_NONE, "", 0), "set_global_transform", "get_global_transform");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "global_position", PROPERTY_HINT_NONE, "", 0), "set_global_translation", "get_global_translation");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "global_translation", PROPERTY_HINT_NONE, "", 0), "set_global_translation", "get_global_translation");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "global_rotation", PROPERTY_HINT_NONE, "", 0), "set_global_rotation", "get_global_rotation");
 
@@ -948,6 +1037,9 @@ void Spatial::_bind_methods() {
 	ADD_GROUP("Visibility", "");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "visible"), "set_visible", "is_visible");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "gizmo", PROPERTY_HINT_RESOURCE_TYPE, "SpatialGizmo", 0), "set_gizmo", "get_gizmo");
+	ADD_GROUP("Misc", "");
+	ADD_PROPERTY(PropertyInfo(Variant::REAL, "lod_range", PROPERTY_HINT_RANGE, "0,1024,0.01,or_greater"), "set_lod_range", "get_lod_range");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "merging_mode", PROPERTY_HINT_ENUM, "Inherit,Off,On"), "set_merging_mode", "get_merging_mode");
 
 	ADD_SIGNAL(MethodInfo("visibility_changed"));
 	ADD_SIGNAL(MethodInfo("gameplay_entered"));
@@ -968,6 +1060,8 @@ Spatial::Spatial() :
 	data.visible = true;
 	data.disable_scale = false;
 	data.vi_visible = true;
+	data.merging_allowed = true;
+	data.merging_mode = MERGING_MODE_INHERIT;
 
 	data.client_physics_interpolation_data = nullptr;
 

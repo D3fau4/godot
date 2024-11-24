@@ -325,10 +325,10 @@ vec4 apply_fxaa(vec4 color, float exposure, vec2 uv_interp, vec2 pixel_size) {
 	const float FXAA_SPAN_MAX = 8.0;
 	const vec3 luma = vec3(0.299, 0.587, 0.114);
 
-	vec4 rgbNW = textureLod(source, uv_interp + vec2(-1.0, -1.0) * pixel_size, 0.0);
-	vec4 rgbNE = textureLod(source, uv_interp + vec2(1.0, -1.0) * pixel_size, 0.0);
-	vec4 rgbSW = textureLod(source, uv_interp + vec2(-1.0, 1.0) * pixel_size, 0.0);
-	vec4 rgbSE = textureLod(source, uv_interp + vec2(1.0, 1.0) * pixel_size, 0.0);
+	vec4 rgbNW = textureLod(source, uv_interp + vec2(-0.5, -0.5) * pixel_size, 0.0);
+	vec4 rgbNE = textureLod(source, uv_interp + vec2(0.5, -0.5) * pixel_size, 0.0);
+	vec4 rgbSW = textureLod(source, uv_interp + vec2(-0.5, 0.5) * pixel_size, 0.0);
+	vec4 rgbSE = textureLod(source, uv_interp + vec2(0.5, 0.5) * pixel_size, 0.0);
 	vec3 rgbM = color.rgb;
 
 #ifdef DISABLE_ALPHA
@@ -507,9 +507,9 @@ void main() {
 	color.rgb += screen_space_dither(gl_FragCoord.xy);
 #endif
 
-	frag_color = color;
-
 #ifdef DISABLE_ALPHA
-	frag_color.a = 1.0;
+	color.a = 1.0;
 #endif
+
+	frag_color = color;
 }

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="SceneTree" inherits="MainLoop" version="3.5" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="SceneTree" inherits="MainLoop" version="3.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		Manages the game loop via a hierarchy of nodes.
 	</brief_description>
@@ -78,6 +78,13 @@
 			<return type="SceneTreeTween" />
 			<description>
 				Creates and returns a new [SceneTreeTween].
+			</description>
+		</method>
+		<method name="get_first_node_in_group">
+			<return type="Node" />
+			<argument index="0" name="group" type="String" />
+			<description>
+				Returns the first node in the specified group, or [code]null[/code] if the group is empty or does not exist.
 			</description>
 		</method>
 		<method name="get_frame" qualifiers="const">

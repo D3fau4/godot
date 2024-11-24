@@ -75,6 +75,12 @@ class OS {
 	bool restart_on_exit;
 	List<String> restart_commandline;
 
+	// For tracking benchmark data
+	bool use_benchmark = false;
+	String benchmark_file;
+	HashMap<String, uint64_t> start_benchmark_from;
+	Dictionary startup_benchmark_json;
+
 protected:
 	bool _update_pending;
 
@@ -123,6 +129,31 @@ public:
 		}
 	};
 
+	struct TTSUtterance {
+		String text;
+		String voice;
+		int volume = 50;
+		float pitch = 1.f;
+		float rate = 1.f;
+		int id = 0;
+	};
+
+	enum TTSUtteranceEvent {
+		TTS_UTTERANCE_STARTED,
+		TTS_UTTERANCE_ENDED,
+		TTS_UTTERANCE_CANCELED,
+		TTS_UTTERANCE_BOUNDARY,
+		TTS_UTTERANCE_MAX,
+	};
+
+private:
+	struct Callback {
+		Object *object = nullptr;
+		StringName cb_name;
+	};
+
+	Callback utterance_callback[TTS_UTTERANCE_MAX];
+
 protected:
 	friend class Main;
 
@@ -160,17 +191,32 @@ public:
 	void printerr(const char *p_format, ...) _PRINTF_FORMAT_ATTRIBUTE_2_3;
 
 	virtual void alert(const String &p_alert, const String &p_title = "ALERT!") = 0;
-	virtual String get_stdin_string(bool p_block = true) = 0;
+	virtual String get_stdin_string() = 0;
 
 	enum MouseMode {
 		MOUSE_MODE_VISIBLE,
 		MOUSE_MODE_HIDDEN,
 		MOUSE_MODE_CAPTURED,
-		MOUSE_MODE_CONFINED
+		MOUSE_MODE_CONFINED,
+		MOUSE_MODE_CONFINED_HIDDEN,
 	};
 
 	virtual void set_mouse_mode(MouseMode p_mode);
 	virtual MouseMode get_mouse_mode() const;
+
+	virtual bool tts_is_speaking() const;
+	virtual bool tts_is_paused() const;
+	virtual Array tts_get_voices() const;
+
+	virtual PoolStringArray tts_get_voices_for_language(const String &p_language) const;
+
+	virtual void tts_speak(const String &p_text, const String &p_voice, int p_volume = 50, float p_pitch = 1.f, float p_rate = 1.f, int p_utterance_id = 0, bool p_interrupt = false);
+	virtual void tts_pause();
+	virtual void tts_resume();
+	virtual void tts_stop();
+
+	virtual void tts_set_utterance_callback(TTSUtteranceEvent p_event, Object *p_object, const StringName &p_callback);
+	virtual void tts_post_utterance_event(TTSUtteranceEvent p_event, int p_id, int p_pos = 0);
 
 	virtual void warp_mouse_position(const Point2 &p_to) {}
 	virtual Point2 get_mouse_position() const = 0;
@@ -325,7 +371,7 @@ public:
 	virtual Error kill(const ProcessID &p_pid) = 0;
 	virtual int get_process_id() const;
 	virtual bool is_process_running(const ProcessID &p_pid) const = 0;
-	virtual void vibrate_handheld(int p_duration_ms = 500);
+	virtual void vibrate_handheld(int p_duration_ms = 500) {}
 
 	virtual Error shell_open(String p_uri);
 	virtual Error set_cwd(const String &p_cwd);
@@ -438,8 +484,19 @@ public:
 		CURSOR_MAX
 	};
 
+	enum VirtualKeyboardType {
+		KEYBOARD_TYPE_DEFAULT,
+		KEYBOARD_TYPE_MULTILINE,
+		KEYBOARD_TYPE_NUMBER,
+		KEYBOARD_TYPE_NUMBER_DECIMAL,
+		KEYBOARD_TYPE_PHONE,
+		KEYBOARD_TYPE_EMAIL_ADDRESS,
+		KEYBOARD_TYPE_PASSWORD,
+		KEYBOARD_TYPE_URL
+	};
+
 	virtual bool has_virtual_keyboard() const;
-	virtual void show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect = Rect2(), bool p_multiline = false, int p_max_input_length = -1, int p_cursor_start = -1, int p_cursor_end = -1);
+	virtual void show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect = Rect2(), VirtualKeyboardType p_type = KEYBOARD_TYPE_DEFAULT, int p_max_input_length = -1, int p_cursor_start = -1, int p_cursor_end = -1);
 	virtual void hide_virtual_keyboard();
 
 	// returns height of the currently shown virtual keyboard (0 if keyboard is hidden)
@@ -517,8 +574,6 @@ public:
 
 	virtual void enable_for_stealing_focus(ProcessID pid) {}
 	virtual void move_window_to_foreground() {}
-
-	virtual void debug_break();
 
 	virtual void release_rendering_thread();
 	virtual void make_rendering_thread();
@@ -613,6 +668,15 @@ public:
 	virtual bool request_permission(const String &p_name) { return true; }
 	virtual bool request_permissions() { return true; }
 	virtual Vector<String> get_granted_permissions() const { return Vector<String>(); }
+
+	// For recording / measuring benchmark data. Only enabled with tools
+	void set_use_benchmark(bool p_use_benchmark);
+	bool is_use_benchmark_set();
+	void set_benchmark_file(const String &p_benchmark_file);
+	String get_benchmark_file();
+	virtual void benchmark_begin_measure(const String &p_what);
+	virtual void benchmark_end_measure(const String &p_what);
+	virtual void benchmark_dump();
 
 	virtual void process_and_drop_events() {}
 	OS();

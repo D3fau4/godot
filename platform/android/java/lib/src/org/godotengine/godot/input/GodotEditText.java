@@ -33,6 +33,7 @@ package org.godotengine.godot.input;
 import org.godotengine.godot.*;
 
 import android.content.Context;
+import android.content.res.Configuration;
 import android.os.Handler;
 import android.os.Message;
 import android.text.InputFilter;
@@ -52,6 +53,18 @@ public class GodotEditText extends EditText {
 	private final static int HANDLER_OPEN_IME_KEYBOARD = 2;
 	private final static int HANDLER_CLOSE_IME_KEYBOARD = 3;
 
+	// Enum must be kept up-to-date with OS::VirtualKeyboardType
+	public enum VirtualKeyboardType {
+		KEYBOARD_TYPE_DEFAULT,
+		KEYBOARD_TYPE_MULTILINE,
+		KEYBOARD_TYPE_NUMBER,
+		KEYBOARD_TYPE_NUMBER_DECIMAL,
+		KEYBOARD_TYPE_PHONE,
+		KEYBOARD_TYPE_EMAIL_ADDRESS,
+		KEYBOARD_TYPE_PASSWORD,
+		KEYBOARD_TYPE_URL
+	}
+
 	// ===========================================================
 	// Fields
 	// ===========================================================
@@ -60,7 +73,7 @@ public class GodotEditText extends EditText {
 	private EditHandler sHandler = new EditHandler(this);
 	private String mOriginText;
 	private int mMaxInputLength = Integer.MAX_VALUE;
-	private boolean mMultiline = false;
+	private VirtualKeyboardType mKeyboardType = VirtualKeyboardType.KEYBOARD_TYPE_DEFAULT;
 
 	private static class EditHandler extends Handler {
 		private final WeakReference<GodotEditText> mEdit;
@@ -101,7 +114,11 @@ public class GodotEditText extends EditText {
 	}
 
 	public boolean isMultiline() {
-		return mMultiline;
+		return mKeyboardType == VirtualKeyboardType.KEYBOARD_TYPE_MULTILINE;
+	}
+
+	public VirtualKeyboardType getKeyboardType() {
+		return mKeyboardType;
 	}
 
 	private void handleMessage(final Message msg) {
@@ -115,15 +132,40 @@ public class GodotEditText extends EditText {
 					edit.setText("");
 					edit.append(text);
 					if (msg.arg2 != -1) {
-						edit.setSelection(msg.arg1, msg.arg2);
+						int selectionStart = Math.min(msg.arg1, edit.length());
+						int selectionEnd = Math.min(msg.arg2, edit.length());
+						edit.setSelection(selectionStart, selectionEnd);
 						edit.mInputWrapper.setSelection(true);
 					} else {
 						edit.mInputWrapper.setSelection(false);
 					}
 
 					int inputType = InputType.TYPE_CLASS_TEXT;
-					if (edit.isMultiline()) {
-						inputType |= InputType.TYPE_TEXT_FLAG_MULTI_LINE;
+					switch (edit.getKeyboardType()) {
+						case KEYBOARD_TYPE_DEFAULT:
+							inputType = InputType.TYPE_CLASS_TEXT;
+							break;
+						case KEYBOARD_TYPE_MULTILINE:
+							inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
+							break;
+						case KEYBOARD_TYPE_NUMBER:
+							inputType = InputType.TYPE_CLASS_NUMBER;
+							break;
+						case KEYBOARD_TYPE_NUMBER_DECIMAL:
+							inputType = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED;
+							break;
+						case KEYBOARD_TYPE_PHONE:
+							inputType = InputType.TYPE_CLASS_PHONE;
+							break;
+						case KEYBOARD_TYPE_EMAIL_ADDRESS:
+							inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS;
+							break;
+						case KEYBOARD_TYPE_PASSWORD:
+							inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD;
+							break;
+						case KEYBOARD_TYPE_URL:
+							inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI;
+							break;
 					}
 					edit.setInputType(inputType);
 
@@ -168,6 +210,17 @@ public class GodotEditText extends EditText {
 	@Override
 	public boolean onKeyDown(final int keyCode, final KeyEvent keyEvent) {
 		/* Let SurfaceView get focus if back key is input. */
+		if (keyCode == KeyEvent.KEYCODE_BACK) {
+			mView.requestFocus();
+		}
+
+		// When a hardware keyboard is connected, all key events come through so we can route them
+		// directly to the engine.
+		// This is not the case when using a soft keyboard, requiring extra processing from this class.
+		if (hasHardwareKeyboard()) {
+			return mView.getInputHandler().onKeyDown(keyCode, keyEvent);
+		}
+
 		// pass event to godot in special cases
 		if (needHandlingInGodot(keyCode, keyEvent) && mView.getInputHandler().onKeyDown(keyCode, keyEvent)) {
 			return true;
@@ -178,6 +231,13 @@ public class GodotEditText extends EditText {
 
 	@Override
 	public boolean onKeyUp(int keyCode, KeyEvent keyEvent) {
+		// When a hardware keyboard is connected, all key events come through so we can route them
+		// directly to the engine.
+		// This is not the case when using a soft keyboard, requiring extra processing from this class.
+		if (hasHardwareKeyboard()) {
+			return mView.getInputHandler().onKeyUp(keyCode, keyEvent);
+		}
+
 		if (needHandlingInGodot(keyCode, keyEvent) && mView.getInputHandler().onKeyUp(keyCode, keyEvent)) {
 			return true;
 		} else {
@@ -194,10 +254,20 @@ public class GodotEditText extends EditText {
 				isModifiedKey;
 	}
 
+	boolean hasHardwareKeyboard() {
+		Configuration config = getResources().getConfiguration();
+		return config.keyboard != Configuration.KEYBOARD_NOKEYS &&
+				config.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO;
+	}
+
 	// ===========================================================
 	// Methods
 	// ===========================================================
-	public void showKeyboard(String p_existing_text, boolean p_multiline, int p_max_input_length, int p_cursor_start, int p_cursor_end) {
+	public void showKeyboard(String p_existing_text, VirtualKeyboardType p_type, int p_max_input_length, int p_cursor_start, int p_cursor_end) {
+		if (hasHardwareKeyboard()) {
+			return;
+		}
+
 		int maxInputLength = (p_max_input_length <= 0) ? Integer.MAX_VALUE : p_max_input_length;
 		if (p_cursor_start == -1) { // cursor position not given
 			this.mOriginText = p_existing_text;
@@ -210,7 +280,7 @@ public class GodotEditText extends EditText {
 			this.mMaxInputLength = maxInputLength - (p_existing_text.length() - p_cursor_end);
 		}
 
-		this.mMultiline = p_multiline;
+		this.mKeyboardType = p_type;
 
 		final Message msg = new Message();
 		msg.what = HANDLER_OPEN_IME_KEYBOARD;
@@ -221,6 +291,10 @@ public class GodotEditText extends EditText {
 	}
 
 	public void hideKeyboard() {
+		if (hasHardwareKeyboard()) {
+			return;
+		}
+
 		final Message msg = new Message();
 		msg.what = HANDLER_CLOSE_IME_KEYBOARD;
 		msg.obj = this;

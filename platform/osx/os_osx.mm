@@ -60,6 +60,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "tts_osx.h"
+
 #if MAC_OS_X_VERSION_MAX_ALLOWED < 101200
 #define NSEventMaskAny NSAnyEventMask
 #define NSEventTypeKeyDown NSKeyDown
@@ -135,7 +137,7 @@ static NSCursor *cursorFromSelector(SEL selector, SEL fallback = nil) {
 	// special case handling of command-period, which is traditionally a special
 	// shortcut in macOS and doesn't arrive at our regular keyDown handler.
 	if ([event type] == NSEventTypeKeyDown) {
-		if (([event modifierFlags] & NSEventModifierFlagCommand) && [event keyCode] == 0x2f) {
+		if ((([event modifierFlags] & NSEventModifierFlagDeviceIndependentFlagsMask) == NSEventModifierFlagCommand) && [event keyCode] == 0x2f) {
 			Ref<InputEventKey> k;
 			k.instance();
 
@@ -333,6 +335,8 @@ static NSCursor *cursorFromSelector(SEL selector, SEL fallback = nil) {
 	if (OS_OSX::singleton->on_top)
 		[OS_OSX::singleton->window_object setLevel:NSFloatingWindowLevel];
 
+	[NSApp setPresentationOptions:NSApplicationPresentationDefault];
+
 	// Force window resize event.
 	[self windowDidResize:notification];
 }
@@ -463,6 +467,10 @@ static NSCursor *cursorFromSelector(SEL selector, SEL fallback = nil) {
 	OS_OSX::singleton->window_focused = true;
 };
 
+- (void)windowDidChangeOcclusionState:(NSNotification *)notification {
+	OS_OSX::singleton->is_visible = ([OS_OSX::singleton->window_object occlusionState] & NSWindowOcclusionStateVisible) && [OS_OSX::singleton->window_object isVisible];
+}
+
 @end
 
 @interface GodotContentView : NSOpenGLView <NSTextInputClient> {
@@ -510,11 +518,7 @@ static NSCursor *cursorFromSelector(SEL selector, SEL fallback = nil) {
 	trackingArea = nil;
 	imeInputEventInProgress = false;
 	[self updateTrackingAreas];
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= 101400
 	[self registerForDraggedTypes:[NSArray arrayWithObject:NSPasteboardTypeFileURL]];
-#else
-	[self registerForDraggedTypes:[NSArray arrayWithObject:NSFilenamesPboardType]];
-#endif
 	markedText = [[NSMutableAttributedString alloc] init];
 	return self;
 }
@@ -660,7 +664,6 @@ static const NSRange kEmptyRange = { NSNotFound, 0 };
 	Vector<String> files;
 	NSPasteboard *pboard = [sender draggingPasteboard];
 
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= 101400
 	NSArray *items = pboard.pasteboardItems;
 	for (NSPasteboardItem *item in items) {
 		NSString *path = [item stringForType:NSPasteboardTypeFileURL];
@@ -671,16 +674,6 @@ static const NSRange kEmptyRange = { NSNotFound, 0 };
 		free(utfs);
 		files.push_back(ret);
 	}
-#else
-	NSArray *filenames = [pboard propertyListForType:NSFilenamesPboardType];
-	for (NSString *ns in filenames) {
-		char *utfs = strdup([ns UTF8String]);
-		String ret;
-		ret.parse_utf8(utfs);
-		free(utfs);
-		files.push_back(ret);
-	}
-#endif
 
 	if (files.size()) {
 		OS_OSX::singleton->main_loop->drop_files(files, 0);
@@ -765,7 +758,7 @@ static void _mouseDownEvent(NSEvent *event, int index, int mask, bool pressed) {
 		return;
 	}
 
-	if (OS_OSX::singleton->mouse_mode == OS::MOUSE_MODE_CONFINED) {
+	if (OS_OSX::singleton->mouse_mode == OS::MOUSE_MODE_CONFINED || OS_OSX::singleton->mouse_mode == OS::MOUSE_MODE_CONFINED_HIDDEN) {
 		// Discard late events
 		if (([event timestamp]) < OS_OSX::singleton->last_warp) {
 			return;
@@ -1580,6 +1573,48 @@ int OS_OSX::get_current_video_driver() const {
 	return video_driver_index;
 }
 
+bool OS_OSX::tts_is_speaking() const {
+	ERR_FAIL_COND_V_MSG(!tts, false, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	ERR_FAIL_COND_V(!tts, false);
+	return [tts isSpeaking];
+}
+
+bool OS_OSX::tts_is_paused() const {
+	ERR_FAIL_COND_V_MSG(!tts, false, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	ERR_FAIL_COND_V(!tts, false);
+	return [tts isPaused];
+}
+
+Array OS_OSX::tts_get_voices() const {
+	ERR_FAIL_COND_V_MSG(!tts, Array(), "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	ERR_FAIL_COND_V(!tts, Array());
+	return [tts getVoices];
+}
+
+void OS_OSX::tts_speak(const String &p_text, const String &p_voice, int p_volume, float p_pitch, float p_rate, int p_utterance_id, bool p_interrupt) {
+	ERR_FAIL_COND_MSG(!tts, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	ERR_FAIL_COND(!tts);
+	[tts speak:p_text voice:p_voice volume:p_volume pitch:p_pitch rate:p_rate utterance_id:p_utterance_id interrupt:p_interrupt];
+}
+
+void OS_OSX::tts_pause() {
+	ERR_FAIL_COND_MSG(!tts, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	ERR_FAIL_COND(!tts);
+	[tts pauseSpeaking];
+}
+
+void OS_OSX::tts_resume() {
+	ERR_FAIL_COND_MSG(!tts, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	ERR_FAIL_COND(!tts);
+	[tts resumeSpeaking];
+}
+
+void OS_OSX::tts_stop() {
+	ERR_FAIL_COND_MSG(!tts, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	ERR_FAIL_COND(!tts);
+	[tts stopSpeaking];
+}
+
 Error OS_OSX::initialize(const VideoMode &p_desired, int p_video_driver, int p_audio_driver) {
 	/*** OSX INITIALIZATION ***/
 	/*** OSX INITIALIZATION ***/
@@ -1597,6 +1632,12 @@ Error OS_OSX::initialize(const VideoMode &p_desired, int p_video_driver, int p_a
 
 	// Register to be notified on displays arrangement changes
 	CGDisplayRegisterReconfigurationCallback(displays_arrangement_changed, NULL);
+
+	// Init TTS
+	bool tts_enabled = GLOBAL_GET("audio/general/text_to_speech");
+	if (tts_enabled) {
+		tts = [[TTS_OSX alloc] init];
+	}
 
 	window_delegate = [[GodotWindowDelegate alloc] init];
 
@@ -2195,7 +2236,7 @@ void OS_OSX::warp_mouse_position(const Point2 &p_to) {
 		CGEventSourceSetLocalEventsSuppressionInterval(lEventRef, 0.0);
 		CGAssociateMouseAndMouseCursorPosition(false);
 		CGWarpMouseCursorPosition(lMouseWarpPos);
-		if (mouse_mode != MOUSE_MODE_CONFINED) {
+		if (mouse_mode != MOUSE_MODE_CONFINED && mouse_mode != MOUSE_MODE_CONFINED_HIDDEN) {
 			CGAssociateMouseAndMouseCursorPosition(true);
 		}
 	}
@@ -2377,7 +2418,7 @@ String OS_OSX::get_system_dir(SystemDir p_dir, bool p_shared_storage) const {
 }
 
 bool OS_OSX::can_draw() const {
-	return true;
+	return is_visible;
 }
 
 void OS_OSX::set_clipboard(const String &p_text) {
@@ -2825,6 +2866,12 @@ void OS_OSX::set_window_fullscreen(bool p_enabled) {
 				Size2 size = max_size / get_screen_max_scale();
 				[window_object setContentMaxSize:NSMakeSize(size.x, size.y)];
 			}
+		}
+		if (p_enabled) {
+			const NSUInteger presentationOptions = NSApplicationPresentationHideDock | NSApplicationPresentationHideMenuBar;
+			[NSApp setPresentationOptions:presentationOptions];
+		} else {
+			[NSApp setPresentationOptions:NSApplicationPresentationDefault];
 		}
 		[window_object toggleFullScreen:nil];
 	}
@@ -3451,7 +3498,12 @@ void OS_OSX::set_mouse_mode(MouseMode p_mode) {
 	} else if (p_mode == MOUSE_MODE_CONFINED) {
 		CGDisplayShowCursor(kCGDirectMainDisplay);
 		CGAssociateMouseAndMouseCursorPosition(false);
-	} else {
+	} else if (p_mode == MOUSE_MODE_CONFINED_HIDDEN) {
+		if (mouse_mode == MOUSE_MODE_VISIBLE || mouse_mode == MOUSE_MODE_CONFINED) {
+			CGDisplayHideCursor(kCGDirectMainDisplay);
+		}
+		CGAssociateMouseAndMouseCursorPosition(false);
+	} else { // MOUSE_MODE_VISIBLE
 		CGDisplayShowCursor(kCGDirectMainDisplay);
 		CGAssociateMouseAndMouseCursorPosition(true);
 	}
@@ -3524,6 +3576,7 @@ OS_OSX::OS_OSX() {
 	im_position = Point2();
 	layered_window = false;
 	autoreleasePool = [[NSAutoreleasePool alloc] init];
+	is_visible = true;
 
 	eventSource = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
 	ERR_FAIL_COND(!eventSource);

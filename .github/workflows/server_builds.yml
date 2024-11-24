@@ -5,7 +5,7 @@ on:
 # Global Settings
 env:
   # Only used for the cache key. Increment version to force clean build.
-  GODOT_BASE_BRANCH: 3.5
+  GODOT_BASE_BRANCH: 3.6
   SCONSFLAGS: verbose=yes warnings=all werror=yes debug_symbols=no module_mono_enabled=yes mono_static=yes mono_glue=no
 
 concurrency:
@@ -43,7 +43,8 @@ jobs:
           # The actual dependencies.
           sudo apt-get install --no-install-recommends build-essential pkg-config libx11-dev \
               libxcursor-dev libxinerama-dev libgl1-mesa-dev libglu-dev libasound2-dev \
-              libpulse-dev libdbus-1-dev libudev-dev libxi-dev libxrandr-dev yasm xvfb wget unzip
+              libpulse-dev libdbus-1-dev libudev-dev libxi-dev libxrandr-dev yasm xvfb wget unzip \
+              libspeechd-dev speech-dispatcher
 
       - name: Restore Godot build cache
         uses: ./.github/actions/godot-cache-restore

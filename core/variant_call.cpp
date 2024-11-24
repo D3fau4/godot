@@ -385,6 +385,7 @@ struct _VariantCall {
 	VCALL_LOCALMEM0R(Vector2, normalized);
 	VCALL_LOCALMEM0R(Vector2, is_normalized);
 	VCALL_LOCALMEM1R(Vector2, is_equal_approx);
+	VCALL_LOCALMEM0R(Vector2, is_zero_approx);
 	VCALL_LOCALMEM1R(Vector2, posmod);
 	VCALL_LOCALMEM1R(Vector2, posmodv);
 	VCALL_LOCALMEM1R(Vector2, project);
@@ -437,6 +438,7 @@ struct _VariantCall {
 	VCALL_LOCALMEM0R(Vector3, normalized);
 	VCALL_LOCALMEM0R(Vector3, is_normalized);
 	VCALL_LOCALMEM1R(Vector3, is_equal_approx);
+	VCALL_LOCALMEM0R(Vector3, is_zero_approx);
 	VCALL_LOCALMEM0R(Vector3, inverse);
 	VCALL_LOCALMEM1R(Vector3, snapped);
 	VCALL_LOCALMEM2R(Vector3, rotated);
@@ -552,12 +554,14 @@ struct _VariantCall {
 	VCALL_LOCALMEM2(Dictionary, merge);
 	VCALL_LOCALMEM1R(Dictionary, has);
 	VCALL_LOCALMEM1R(Dictionary, has_all);
+	VCALL_LOCALMEM1R(Dictionary, find_key);
 	VCALL_LOCALMEM1R(Dictionary, erase);
 	VCALL_LOCALMEM0R(Dictionary, hash);
 	VCALL_LOCALMEM0R(Dictionary, keys);
 	VCALL_LOCALMEM0R(Dictionary, values);
 	VCALL_LOCALMEM1R(Dictionary, duplicate);
 	VCALL_LOCALMEM2R(Dictionary, get);
+	VCALL_LOCALMEM2R(Dictionary, get_or_add);
 
 	VCALL_LOCALMEM2(Array, set);
 	VCALL_LOCALMEM1R(Array, get);
@@ -577,6 +581,7 @@ struct _VariantCall {
 	VCALL_LOCALMEM2(Array, insert);
 	VCALL_LOCALMEM1(Array, remove);
 	VCALL_LOCALMEM0R(Array, front);
+	VCALL_LOCALMEM0R(Array, pick_random)
 	VCALL_LOCALMEM0R(Array, back);
 	VCALL_LOCALMEM2R(Array, find);
 	VCALL_LOCALMEM2R(Array, rfind);
@@ -696,6 +701,7 @@ struct _VariantCall {
 	VCALL_LOCALMEM1(PoolByteArray, push_back);
 	VCALL_LOCALMEM1(PoolByteArray, fill);
 	VCALL_LOCALMEM1(PoolByteArray, resize);
+	VCALL_LOCALMEM0(PoolByteArray, clear);
 	VCALL_LOCALMEM2R(PoolByteArray, insert);
 	VCALL_LOCALMEM1(PoolByteArray, remove);
 	VCALL_LOCALMEM1(PoolByteArray, append);
@@ -715,6 +721,7 @@ struct _VariantCall {
 	VCALL_LOCALMEM1(PoolIntArray, push_back);
 	VCALL_LOCALMEM1(PoolIntArray, fill);
 	VCALL_LOCALMEM1(PoolIntArray, resize);
+	VCALL_LOCALMEM0(PoolIntArray, clear);
 	VCALL_LOCALMEM2R(PoolIntArray, insert);
 	VCALL_LOCALMEM1(PoolIntArray, remove);
 	VCALL_LOCALMEM1(PoolIntArray, append);
@@ -733,6 +740,7 @@ struct _VariantCall {
 	VCALL_LOCALMEM1(PoolRealArray, push_back);
 	VCALL_LOCALMEM1(PoolRealArray, fill);
 	VCALL_LOCALMEM1(PoolRealArray, resize);
+	VCALL_LOCALMEM0(PoolRealArray, clear);
 	VCALL_LOCALMEM2R(PoolRealArray, insert);
 	VCALL_LOCALMEM1(PoolRealArray, remove);
 	VCALL_LOCALMEM1(PoolRealArray, append);
@@ -751,6 +759,7 @@ struct _VariantCall {
 	VCALL_LOCALMEM1(PoolStringArray, push_back);
 	VCALL_LOCALMEM1(PoolStringArray, fill);
 	VCALL_LOCALMEM1(PoolStringArray, resize);
+	VCALL_LOCALMEM0(PoolStringArray, clear);
 	VCALL_LOCALMEM2R(PoolStringArray, insert);
 	VCALL_LOCALMEM1(PoolStringArray, remove);
 	VCALL_LOCALMEM1(PoolStringArray, append);
@@ -770,6 +779,7 @@ struct _VariantCall {
 	VCALL_LOCALMEM1(PoolVector2Array, push_back);
 	VCALL_LOCALMEM1(PoolVector2Array, fill);
 	VCALL_LOCALMEM1(PoolVector2Array, resize);
+	VCALL_LOCALMEM0(PoolVector2Array, clear);
 	VCALL_LOCALMEM2R(PoolVector2Array, insert);
 	VCALL_LOCALMEM1(PoolVector2Array, remove);
 	VCALL_LOCALMEM1(PoolVector2Array, append);
@@ -788,6 +798,7 @@ struct _VariantCall {
 	VCALL_LOCALMEM1(PoolVector3Array, push_back);
 	VCALL_LOCALMEM1(PoolVector3Array, fill);
 	VCALL_LOCALMEM1(PoolVector3Array, resize);
+	VCALL_LOCALMEM0(PoolVector3Array, clear);
 	VCALL_LOCALMEM2R(PoolVector3Array, insert);
 	VCALL_LOCALMEM1(PoolVector3Array, remove);
 	VCALL_LOCALMEM1(PoolVector3Array, append);
@@ -806,6 +817,7 @@ struct _VariantCall {
 	VCALL_LOCALMEM1(PoolColorArray, push_back);
 	VCALL_LOCALMEM1(PoolColorArray, fill);
 	VCALL_LOCALMEM1(PoolColorArray, resize);
+	VCALL_LOCALMEM0(PoolColorArray, clear);
 	VCALL_LOCALMEM2R(PoolColorArray, insert);
 	VCALL_LOCALMEM1(PoolColorArray, remove);
 	VCALL_LOCALMEM1(PoolColorArray, append);
@@ -877,6 +889,7 @@ struct _VariantCall {
 	VCALL_PTR1R(Transform2D, translated);
 	VCALL_PTR2R(Transform2D, interpolate_with);
 	VCALL_PTR1R(Transform2D, is_equal_approx);
+	VCALL_PTR0R(Transform2D, determinant);
 
 	static void _call_Transform2D_xform(Variant &r_ret, Variant &p_self, const Variant **p_args) {
 		switch (p_args[0]->type) {
@@ -1094,11 +1107,8 @@ struct _VariantCall {
 	}
 
 	static void Color_init3(Variant &r_ret, const Variant **p_args) {
-		r_ret = Color::html(*p_args[0]);
-	}
-
-	static void Color_init4(Variant &r_ret, const Variant **p_args) {
-		r_ret = Color::hex(*p_args[0]);
+		Color c = *p_args[0];
+		r_ret = Color(c.r, c.g, c.b, *p_args[1]);
 	}
 
 	static void AABB_init1(Variant &r_ret, const Variant **p_args) {
@@ -1792,6 +1802,7 @@ void register_variant_methods() {
 	ADDFUNC0R(VECTOR2, VECTOR2, Vector2, normalized, varray());
 	ADDFUNC0R(VECTOR2, BOOL, Vector2, is_normalized, varray());
 	ADDFUNC1R(VECTOR2, BOOL, Vector2, is_equal_approx, VECTOR2, "v", varray());
+	ADDFUNC0R(VECTOR2, BOOL, Vector2, is_zero_approx, varray());
 	ADDFUNC1R(VECTOR2, VECTOR2, Vector2, posmod, REAL, "mod", varray());
 	ADDFUNC1R(VECTOR2, VECTOR2, Vector2, posmodv, VECTOR2, "modv", varray());
 	ADDFUNC1R(VECTOR2, VECTOR2, Vector2, project, VECTOR2, "b", varray());
@@ -1843,6 +1854,7 @@ void register_variant_methods() {
 	ADDFUNC0R(VECTOR3, VECTOR3, Vector3, normalized, varray());
 	ADDFUNC0R(VECTOR3, BOOL, Vector3, is_normalized, varray());
 	ADDFUNC1R(VECTOR3, BOOL, Vector3, is_equal_approx, VECTOR3, "v", varray());
+	ADDFUNC0R(VECTOR3, BOOL, Vector3, is_zero_approx, varray());
 	ADDFUNC0R(VECTOR3, VECTOR3, Vector3, inverse, varray());
 	ADDFUNC1R(VECTOR3, VECTOR3, Vector3, snapped, VECTOR3, "by", varray());
 	ADDFUNC2R(VECTOR3, VECTOR3, Vector3, rotated, VECTOR3, "axis", REAL, "angle", varray());
@@ -1930,12 +1942,14 @@ void register_variant_methods() {
 	ADDFUNC2NC(DICTIONARY, NIL, Dictionary, merge, DICTIONARY, "dictionary", BOOL, "overwrite", varray(false));
 	ADDFUNC1R(DICTIONARY, BOOL, Dictionary, has, NIL, "key", varray());
 	ADDFUNC1R(DICTIONARY, BOOL, Dictionary, has_all, ARRAY, "keys", varray());
+	ADDFUNC1R(DICTIONARY, NIL, Dictionary, find_key, NIL, "value", varray());
 	ADDFUNC1RNC(DICTIONARY, BOOL, Dictionary, erase, NIL, "key", varray());
 	ADDFUNC0R(DICTIONARY, INT, Dictionary, hash, varray());
 	ADDFUNC0R(DICTIONARY, ARRAY, Dictionary, keys, varray());
 	ADDFUNC0R(DICTIONARY, ARRAY, Dictionary, values, varray());
 	ADDFUNC1R(DICTIONARY, DICTIONARY, Dictionary, duplicate, BOOL, "deep", varray(false));
 	ADDFUNC2R(DICTIONARY, NIL, Dictionary, get, NIL, "key", NIL, "default", varray(Variant()));
+	ADDFUNC2R(DICTIONARY, NIL, Dictionary, get_or_add, NIL, "key", NIL, "default", varray(Variant()));
 
 	ADDFUNC0R(ARRAY, INT, Array, size, varray());
 	ADDFUNC0R(ARRAY, BOOL, Array, empty, varray());
@@ -1951,6 +1965,7 @@ void register_variant_methods() {
 	ADDFUNC1NC(ARRAY, NIL, Array, remove, INT, "position", varray());
 	ADDFUNC1NC(ARRAY, NIL, Array, erase, NIL, "value", varray());
 	ADDFUNC0R(ARRAY, NIL, Array, front, varray());
+	ADDFUNC0R(ARRAY, NIL, Array, pick_random, varray())
 	ADDFUNC0R(ARRAY, NIL, Array, back, varray());
 	ADDFUNC2R(ARRAY, INT, Array, find, NIL, "what", INT, "from", varray(0));
 	ADDFUNC2R(ARRAY, INT, Array, rfind, NIL, "what", INT, "from", varray(-1));
@@ -1981,6 +1996,7 @@ void register_variant_methods() {
 	ADDFUNC1(POOL_BYTE_ARRAY, NIL, PoolByteArray, remove, INT, "idx", varray());
 	ADDFUNC2R(POOL_BYTE_ARRAY, INT, PoolByteArray, insert, INT, "idx", INT, "byte", varray());
 	ADDFUNC1(POOL_BYTE_ARRAY, NIL, PoolByteArray, resize, INT, "idx", varray());
+	ADDFUNC0(POOL_BYTE_ARRAY, NIL, PoolByteArray, clear, varray());
 	ADDFUNC0(POOL_BYTE_ARRAY, NIL, PoolByteArray, invert, varray());
 	ADDFUNC2R(POOL_BYTE_ARRAY, POOL_BYTE_ARRAY, PoolByteArray, subarray, INT, "from", INT, "to", varray());
 	ADDFUNC2R(POOL_BYTE_ARRAY, INT, PoolByteArray, find, INT, "value", INT, "from", varray(0));
@@ -2006,6 +2022,7 @@ void register_variant_methods() {
 	ADDFUNC1(POOL_INT_ARRAY, NIL, PoolIntArray, remove, INT, "idx", varray());
 	ADDFUNC2R(POOL_INT_ARRAY, INT, PoolIntArray, insert, INT, "idx", INT, "integer", varray());
 	ADDFUNC1(POOL_INT_ARRAY, NIL, PoolIntArray, resize, INT, "idx", varray());
+	ADDFUNC0(POOL_INT_ARRAY, NIL, PoolIntArray, clear, varray());
 	ADDFUNC0(POOL_INT_ARRAY, NIL, PoolIntArray, invert, varray());
 	ADDFUNC2R(POOL_INT_ARRAY, INT, PoolIntArray, find, INT, "value", INT, "from", varray(0));
 	ADDFUNC2R(POOL_INT_ARRAY, INT, PoolIntArray, rfind, INT, "value", INT, "from", varray(-1));
@@ -2023,6 +2040,7 @@ void register_variant_methods() {
 	ADDFUNC1(POOL_REAL_ARRAY, NIL, PoolRealArray, remove, INT, "idx", varray());
 	ADDFUNC2R(POOL_REAL_ARRAY, INT, PoolRealArray, insert, INT, "idx", REAL, "value", varray());
 	ADDFUNC1(POOL_REAL_ARRAY, NIL, PoolRealArray, resize, INT, "idx", varray());
+	ADDFUNC0(POOL_REAL_ARRAY, NIL, PoolRealArray, clear, varray());
 	ADDFUNC0(POOL_REAL_ARRAY, NIL, PoolRealArray, invert, varray());
 	ADDFUNC2R(POOL_REAL_ARRAY, INT, PoolRealArray, find, REAL, "value", INT, "from", varray(0));
 	ADDFUNC2R(POOL_REAL_ARRAY, INT, PoolRealArray, rfind, REAL, "value", INT, "from", varray(-1));
@@ -2040,6 +2058,7 @@ void register_variant_methods() {
 	ADDFUNC1(POOL_STRING_ARRAY, NIL, PoolStringArray, remove, INT, "idx", varray());
 	ADDFUNC2R(POOL_STRING_ARRAY, INT, PoolStringArray, insert, INT, "idx", STRING, "string", varray());
 	ADDFUNC1(POOL_STRING_ARRAY, NIL, PoolStringArray, resize, INT, "idx", varray());
+	ADDFUNC0(POOL_STRING_ARRAY, NIL, PoolStringArray, clear, varray());
 	ADDFUNC0(POOL_STRING_ARRAY, NIL, PoolStringArray, invert, varray());
 	ADDFUNC1(POOL_STRING_ARRAY, STRING, PoolStringArray, join, STRING, "delimiter", varray());
 	ADDFUNC2R(POOL_STRING_ARRAY, INT, PoolStringArray, find, STRING, "value", INT, "from", varray(0));
@@ -2058,6 +2077,7 @@ void register_variant_methods() {
 	ADDFUNC1(POOL_VECTOR2_ARRAY, NIL, PoolVector2Array, remove, INT, "idx", varray());
 	ADDFUNC2R(POOL_VECTOR2_ARRAY, INT, PoolVector2Array, insert, INT, "idx", VECTOR2, "vector2", varray());
 	ADDFUNC1(POOL_VECTOR2_ARRAY, NIL, PoolVector2Array, resize, INT, "idx", varray());
+	ADDFUNC0(POOL_VECTOR2_ARRAY, NIL, PoolVector2Array, clear, varray());
 	ADDFUNC0(POOL_VECTOR2_ARRAY, NIL, PoolVector2Array, invert, varray());
 	ADDFUNC2R(POOL_VECTOR2_ARRAY, INT, PoolVector2Array, find, VECTOR2, "value", INT, "from", varray(0));
 	ADDFUNC2R(POOL_VECTOR2_ARRAY, INT, PoolVector2Array, rfind, VECTOR2, "value", INT, "from", varray(-1));
@@ -2075,6 +2095,7 @@ void register_variant_methods() {
 	ADDFUNC1(POOL_VECTOR3_ARRAY, NIL, PoolVector3Array, remove, INT, "idx", varray());
 	ADDFUNC2R(POOL_VECTOR3_ARRAY, INT, PoolVector3Array, insert, INT, "idx", VECTOR3, "vector3", varray());
 	ADDFUNC1(POOL_VECTOR3_ARRAY, NIL, PoolVector3Array, resize, INT, "idx", varray());
+	ADDFUNC0(POOL_VECTOR3_ARRAY, NIL, PoolVector3Array, clear, varray());
 	ADDFUNC0(POOL_VECTOR3_ARRAY, NIL, PoolVector3Array, invert, varray());
 	ADDFUNC2R(POOL_VECTOR3_ARRAY, INT, PoolVector3Array, find, VECTOR3, "value", INT, "from", varray(0));
 	ADDFUNC2R(POOL_VECTOR3_ARRAY, INT, PoolVector3Array, rfind, VECTOR3, "value", INT, "from", varray(-1));
@@ -2092,6 +2113,7 @@ void register_variant_methods() {
 	ADDFUNC1(POOL_COLOR_ARRAY, NIL, PoolColorArray, remove, INT, "idx", varray());
 	ADDFUNC2R(POOL_COLOR_ARRAY, INT, PoolColorArray, insert, INT, "idx", COLOR, "color", varray());
 	ADDFUNC1(POOL_COLOR_ARRAY, NIL, PoolColorArray, resize, INT, "idx", varray());
+	ADDFUNC0(POOL_COLOR_ARRAY, NIL, PoolColorArray, clear, varray());
 	ADDFUNC0(POOL_COLOR_ARRAY, NIL, PoolColorArray, invert, varray());
 	ADDFUNC2R(POOL_COLOR_ARRAY, INT, PoolColorArray, find, COLOR, "value", INT, "from", varray(0));
 	ADDFUNC2R(POOL_COLOR_ARRAY, INT, PoolColorArray, rfind, COLOR, "value", INT, "from", varray(-1));
@@ -2136,6 +2158,7 @@ void register_variant_methods() {
 	ADDFUNC1R(TRANSFORM2D, TRANSFORM2D, Transform2D, translated, VECTOR2, "offset", varray());
 	ADDFUNC1R(TRANSFORM2D, NIL, Transform2D, xform, NIL, "v", varray());
 	ADDFUNC1R(TRANSFORM2D, NIL, Transform2D, xform_inv, NIL, "v", varray());
+	ADDFUNC0R(TRANSFORM2D, REAL, Transform2D, determinant, varray());
 	ADDFUNC1R(TRANSFORM2D, VECTOR2, Transform2D, basis_xform, VECTOR2, "v", varray());
 	ADDFUNC1R(TRANSFORM2D, VECTOR2, Transform2D, basis_xform_inv, VECTOR2, "v", varray());
 	ADDFUNC2R(TRANSFORM2D, TRANSFORM2D, Transform2D, interpolate_with, TRANSFORM2D, "transform", REAL, "weight", varray());
@@ -2194,6 +2217,7 @@ void register_variant_methods() {
 
 	_VariantCall::add_constructor(_VariantCall::Color_init1, Variant::COLOR, "r", Variant::REAL, "g", Variant::REAL, "b", Variant::REAL, "a", Variant::REAL);
 	_VariantCall::add_constructor(_VariantCall::Color_init2, Variant::COLOR, "r", Variant::REAL, "g", Variant::REAL, "b", Variant::REAL);
+	_VariantCall::add_constructor(_VariantCall::Color_init3, Variant::COLOR, "from", Variant::COLOR, "alpha", Variant::REAL);
 
 	_VariantCall::add_constructor(_VariantCall::AABB_init1, Variant::AABB, "position", Variant::VECTOR3, "size", Variant::VECTOR3);
 

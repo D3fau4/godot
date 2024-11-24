@@ -31,23 +31,18 @@
 #ifndef GLTF_STATE_H
 #define GLTF_STATE_H
 
-#include "core/map.h"
-#include "core/resource.h"
-#include "core/vector.h"
-#include "scene/animation/animation_player.h"
-#include "scene/resources/texture.h"
-
-#include "gltf_accessor.h"
-#include "gltf_animation.h"
-#include "gltf_buffer_view.h"
-#include "gltf_camera.h"
-#include "gltf_document.h"
-#include "gltf_light.h"
-#include "gltf_mesh.h"
-#include "gltf_node.h"
-#include "gltf_skeleton.h"
-#include "gltf_skin.h"
-#include "gltf_texture.h"
+#include "extensions/gltf_light.h"
+#include "gltf_template_convert.h"
+#include "structures/gltf_accessor.h"
+#include "structures/gltf_animation.h"
+#include "structures/gltf_buffer_view.h"
+#include "structures/gltf_camera.h"
+#include "structures/gltf_mesh.h"
+#include "structures/gltf_node.h"
+#include "structures/gltf_skeleton.h"
+#include "structures/gltf_skin.h"
+#include "structures/gltf_texture.h"
+#include "structures/gltf_texture_sampler.h"
 
 class GLTFState : public Resource {
 	GDCLASS(GLTFState, Resource);
@@ -61,8 +56,10 @@ class GLTFState : public Resource {
 	Vector<uint8_t> glb_data;
 
 	bool use_named_skin_binds = false;
+	bool use_khr_texture_transform = false;
 	bool use_legacy_names = false;
 	uint32_t compress_flags = 0;
+	bool create_animations = true;
 
 	Vector<Ref<GLTFNode>> nodes;
 	Vector<Vector<uint8_t>> buffers;
@@ -78,7 +75,13 @@ class GLTFState : public Resource {
 	String scene_name;
 	Vector<int> root_nodes;
 	Vector<Ref<GLTFTexture>> textures;
-	Vector<Ref<Texture>> images;
+	Vector<Ref<GLTFTextureSampler>> texture_samplers;
+	Ref<GLTFTextureSampler> default_texture_sampler;
+	Vector<Ref<Image>> images;
+	Map<GLTFImageIndex, String> external_images_paths;
+	Map<GLTFTextureIndex, Ref<Texture>> texture_cache;
+	Vector<String> extensions_used;
+	Vector<String> extensions_required;
 
 	Vector<Ref<GLTFSkin>> skins;
 	Vector<Ref<GLTFCamera>> cameras;
@@ -93,11 +96,14 @@ class GLTFState : public Resource {
 
 	Map<ObjectID, GLTFSkeletonIndex> skeleton3d_to_gltf_skeleton;
 	Map<ObjectID, Map<ObjectID, GLTFSkinIndex>> skin_and_skeleton3d_to_gltf_skin;
+	Dictionary additional_data;
 
 protected:
 	static void _bind_methods();
 
 public:
+	void add_used_extension(const String &p_extension, bool p_required = false);
+
 	Dictionary get_json();
 	void set_json(Dictionary p_json);
 
@@ -140,6 +146,9 @@ public:
 	Array get_textures();
 	void set_textures(Array p_textures);
 
+	Array get_texture_samplers();
+	void set_texture_samplers(Array p_texture_samplers);
+
 	Array get_images();
 	void set_images(Array p_images);
 
@@ -164,6 +173,9 @@ public:
 	Dictionary get_skeleton_to_node();
 	void set_skeleton_to_node(Dictionary p_skeleton_to_node);
 
+	bool get_create_animations();
+	void set_create_animations(bool p_create_animations);
+
 	Array get_animations();
 	void set_animations(Array p_animations);
 
@@ -172,6 +184,9 @@ public:
 	int get_animation_players_count(int idx);
 
 	AnimationPlayer *get_animation_player(int idx);
+
+	Variant get_additional_data(const String &p_extension_name);
+	void set_additional_data(const String &p_extension_name, Variant p_additional_data);
 };
 
 #endif // GLTF_STATE_H

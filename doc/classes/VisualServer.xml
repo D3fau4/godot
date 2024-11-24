@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="VisualServer" inherits="Object" version="3.5" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="VisualServer" inherits="Object" version="3.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		Server for anything visible.
 	</brief_description>
@@ -309,6 +309,14 @@
 				Once finished with your RID, you will want to free the RID using the VisualServer's [method free_rid] static method.
 			</description>
 		</method>
+		<method name="canvas_item_reset_physics_interpolation">
+			<return type="void" />
+			<argument index="0" name="item" type="RID" />
+			<description>
+				Prevents physics interpolation for the current physics tick.
+				This is useful when moving a canvas item to a new location, to give an instantaneous change rather than interpolation from the previous location.
+			</description>
+		</method>
 		<method name="canvas_item_set_clip">
 			<return type="void" />
 			<argument index="0" name="item" type="RID" />
@@ -357,6 +365,14 @@
 			<argument index="1" name="index" type="int" />
 			<description>
 				Sets the index for the [CanvasItem].
+			</description>
+		</method>
+		<method name="canvas_item_set_interpolated">
+			<return type="void" />
+			<argument index="0" name="item" type="RID" />
+			<argument index="1" name="interpolated" type="bool" />
+			<description>
+				Turns on and off physics interpolation for the canvas item.
 			</description>
 		</method>
 		<method name="canvas_item_set_light_mask">
@@ -447,6 +463,16 @@
 				Sets the [CanvasItem]'s Z index, i.e. its draw order (lower indexes are drawn first).
 			</description>
 		</method>
+		<method name="canvas_item_transform_physics_interpolation">
+			<return type="void" />
+			<argument index="0" name="item" type="RID" />
+			<argument index="1" name="xform" type="Transform2D" />
+			<description>
+				Transforms both the current and previous stored transform for a canvas item.
+				This allows transforming a canvas item without creating a "glitch" in the interpolation.
+				This is particularly useful for large worlds utilising a shifting origin.
+			</description>
+		</method>
 		<method name="canvas_light_attach_to_canvas">
 			<return type="void" />
 			<argument index="0" name="light" type="RID" />
@@ -477,12 +503,28 @@
 				Once finished with your RID, you will want to free the RID using the VisualServer's [method free_rid] static method.
 			</description>
 		</method>
+		<method name="canvas_light_occluder_reset_physics_interpolation">
+			<return type="void" />
+			<argument index="0" name="occluder" type="RID" />
+			<description>
+				Prevents physics interpolation for the current physics tick.
+				This is useful when moving an occluder to a new location, to give an instantaneous change rather than interpolation from the previous location.
+			</description>
+		</method>
 		<method name="canvas_light_occluder_set_enabled">
 			<return type="void" />
 			<argument index="0" name="occluder" type="RID" />
 			<argument index="1" name="enabled" type="bool" />
 			<description>
 				Enables or disables light occluder.
+			</description>
+		</method>
+		<method name="canvas_light_occluder_set_interpolated">
+			<return type="void" />
+			<argument index="0" name="occluder" type="RID" />
+			<argument index="1" name="interpolated" type="bool" />
+			<description>
+				Turns on and off physics interpolation for the occluder.
 			</description>
 		</method>
 		<method name="canvas_light_occluder_set_light_mask">
@@ -507,6 +549,24 @@
 			<argument index="1" name="transform" type="Transform2D" />
 			<description>
 				Sets a light occluder's [Transform2D].
+			</description>
+		</method>
+		<method name="canvas_light_occluder_transform_physics_interpolation">
+			<return type="void" />
+			<argument index="0" name="occluder" type="RID" />
+			<argument index="1" name="xform" type="Transform2D" />
+			<description>
+				Transforms both the current and previous stored transform for an occluder.
+				This allows transforming an occluder without creating a "glitch" in the interpolation.
+				This is particularly useful for large worlds utilising a shifting origin.
+			</description>
+		</method>
+		<method name="canvas_light_reset_physics_interpolation">
+			<return type="void" />
+			<argument index="0" name="light" type="RID" />
+			<description>
+				Prevents physics interpolation for the current physics tick.
+				This is useful when moving a light to a new location, to give an instantaneous change rather than interpolation from the previous location.
 			</description>
 		</method>
 		<method name="canvas_light_set_color">
@@ -539,6 +599,14 @@
 			<argument index="1" name="height" type="float" />
 			<description>
 				Sets a canvas light's height.
+			</description>
+		</method>
+		<method name="canvas_light_set_interpolated">
+			<return type="void" />
+			<argument index="0" name="light" type="RID" />
+			<argument index="1" name="interpolated" type="bool" />
+			<description>
+				Turns on and off physics interpolation for the light.
 			</description>
 		</method>
 		<method name="canvas_light_set_item_cull_mask">
@@ -663,6 +731,16 @@
 				Sets the Z range of objects that will be affected by this light. Equivalent to [member Light2D.range_z_min] and [member Light2D.range_z_max].
 			</description>
 		</method>
+		<method name="canvas_light_transform_physics_interpolation">
+			<return type="void" />
+			<argument index="0" name="light" type="RID" />
+			<argument index="1" name="xform" type="Transform2D" />
+			<description>
+				Transforms both the current and previous stored transform for a light.
+				This allows transforming a light without creating a "glitch" in the interpolation.
+				This is particularly useful for large worlds utilising a shifting origin.
+			</description>
+		</method>
 		<method name="canvas_occluder_polygon_create">
 			<return type="RID" />
 			<description>
@@ -710,6 +788,22 @@
 			<argument index="1" name="color" type="Color" />
 			<description>
 				Modulates all colors in the given canvas.
+			</description>
+		</method>
+		<method name="debug_canvas_item_get_local_bound">
+			<return type="Rect2" />
+			<argument index="0" name="item" type="RID" />
+			<description>
+				Returns the bounding rectangle for a canvas item and its descendants in local space, as calculated by the renderer. This bound is used internally for culling.
+				[b]Warning:[/b] This function is intended for debugging in the editor, and will pass through and return a zero [Rect2] in exported projects.
+			</description>
+		</method>
+		<method name="debug_canvas_item_get_rect">
+			<return type="Rect2" />
+			<argument index="0" name="item" type="RID" />
+			<description>
+				Returns the bounding rectangle for a canvas item in local space, as calculated by the renderer. This bound is used internally for culling.
+				[b]Warning:[/b] This function is intended for debugging in the editor, and will pass through and return a zero [Rect2] in exported projects.
 			</description>
 		</method>
 		<method name="directional_light_create">
@@ -961,7 +1055,19 @@
 			<return type="void" />
 			<argument index="0" name="rid" type="RID" />
 			<description>
-				Tries to free an object in the VisualServer.
+				Destroys an object created by the VisualServer. If the [RID] passed is not one created by the server that created it (e.g. VisualServer, PhysicsServer, etc.), an error will be sent to the console.
+				[b]Note:[/b] After freeing the object, the RID now has a reference to invalid memory. It is not safe to use or free an invalid RID. Before using the RID again, make sure to assign it to [code]RID()[/code] or any other valid RID.
+				[codeblock]
+				var r: RID = VisualServer.get_test_cube()
+				VisualServer.free_rid(r)
+				print("ID: ", r.get_id())   # It is not safe to access or free an invalid RID
+				r = RID()                   # Reset the RID so it is safe to use again.
+				print("ID: ", r.get_id())
+
+				# Output:
+				# ID: 157     # Freed RID has invalid data
+				# ID: 0       # RID has been properly reset
+				[/codeblock]
 			</description>
 		</method>
 		<method name="get_render_info">
@@ -1340,31 +1446,12 @@
 				Once finished with your RID, you will want to free the RID using the VisualServer's [method free_rid] static method.
 			</description>
 		</method>
-		<method name="instance_geometry_set_as_instance_lod">
-			<return type="void" />
-			<argument index="0" name="instance" type="RID" />
-			<argument index="1" name="as_lod_of_instance" type="RID" />
-			<description>
-				Not implemented in Godot 3.x.
-			</description>
-		</method>
 		<method name="instance_geometry_set_cast_shadows_setting">
 			<return type="void" />
 			<argument index="0" name="instance" type="RID" />
 			<argument index="1" name="shadow_casting_setting" type="int" enum="VisualServer.ShadowCastingSetting" />
 			<description>
 				Sets the shadow casting setting to one of [enum ShadowCastingSetting]. Equivalent to [member GeometryInstance.cast_shadow].
-			</description>
-		</method>
-		<method name="instance_geometry_set_draw_range">
-			<return type="void" />
-			<argument index="0" name="instance" type="RID" />
-			<argument index="1" name="min" type="float" />
-			<argument index="2" name="max" type="float" />
-			<argument index="3" name="min_margin" type="float" />
-			<argument index="4" name="max_margin" type="float" />
-			<description>
-				Not implemented in Godot 3.x.
 			</description>
 		</method>
 		<method name="instance_geometry_set_flag">
@@ -1390,6 +1477,14 @@
 			<argument index="1" name="material" type="RID" />
 			<description>
 				Sets a material that will override the material for all surfaces on the mesh associated with this instance. Equivalent to [member GeometryInstance.material_override].
+			</description>
+		</method>
+		<method name="instance_reset_physics_interpolation">
+			<return type="void" />
+			<argument index="0" name="instance" type="RID" />
+			<description>
+				Prevents physics interpolation for the current physics tick.
+				This is useful when moving an instance to a new location, to give an instantaneous change rather than interpolation from the previous location.
 			</description>
 		</method>
 		<method name="instance_set_base">
@@ -1431,6 +1526,14 @@
 			<argument index="1" name="margin" type="float" />
 			<description>
 				Sets a margin to increase the size of the AABB when culling objects from the view frustum. This allows you to avoid culling objects that fall outside the view frustum. Equivalent to [member GeometryInstance.extra_cull_margin].
+			</description>
+		</method>
+		<method name="instance_set_interpolated">
+			<return type="void" />
+			<argument index="0" name="instance" type="RID" />
+			<argument index="1" name="interpolated" type="bool" />
+			<description>
+				Turns on and off physics interpolation for the instance.
 			</description>
 		</method>
 		<method name="instance_set_layer_mask">
@@ -2103,6 +2206,15 @@
 				Returns the [Transform2D] of the specified instance. For use when the multimesh is set to use 2D transforms.
 			</description>
 		</method>
+		<method name="multimesh_instance_reset_physics_interpolation">
+			<return type="void" />
+			<argument index="0" name="multimesh" type="RID" />
+			<argument index="1" name="index" type="int" />
+			<description>
+				Prevents physics interpolation for the specified instance during the current physics tick.
+				This is useful when moving an instance to a new location, to give an instantaneous change rather than interpolation from the previous location.
+			</description>
+		</method>
 		<method name="multimesh_instance_set_color">
 			<return type="void" />
 			<argument index="0" name="multimesh" type="RID" />
@@ -2151,12 +2263,39 @@
 				[Transform] is stored as 12 floats, [Transform2D] is stored as 8 floats, [code]COLOR_8BIT[/code] / [code]CUSTOM_DATA_8BIT[/code] is stored as 1 float (4 bytes as is) and [code]COLOR_FLOAT[/code] / [code]CUSTOM_DATA_FLOAT[/code] is stored as 4 floats.
 			</description>
 		</method>
+		<method name="multimesh_set_as_bulk_array_interpolated">
+			<return type="void" />
+			<argument index="0" name="multimesh" type="RID" />
+			<argument index="1" name="array" type="PoolRealArray" />
+			<argument index="2" name="array_previous" type="PoolRealArray" />
+			<description>
+				Alternative version of [method multimesh_set_as_bulk_array] for use with physics interpolation.
+				Takes both an array of current data and an array of data for the previous physics tick.
+			</description>
+		</method>
 		<method name="multimesh_set_mesh">
 			<return type="void" />
 			<argument index="0" name="multimesh" type="RID" />
 			<argument index="1" name="mesh" type="RID" />
 			<description>
 				Sets the mesh to be drawn by the multimesh. Equivalent to [member MultiMesh.mesh].
+			</description>
+		</method>
+		<method name="multimesh_set_physics_interpolated">
+			<return type="void" />
+			<argument index="0" name="multimesh" type="RID" />
+			<argument index="1" name="interpolated" type="bool" />
+			<description>
+				Turns on and off physics interpolation for the [MultiMesh].
+			</description>
+		</method>
+		<method name="multimesh_set_physics_interpolation_quality">
+			<return type="void" />
+			<argument index="0" name="multimesh" type="RID" />
+			<argument index="1" name="quality" type="int" enum="VisualServer.MultimeshPhysicsInterpolationQuality" />
+			<description>
+				Sets the physics interpolation quality for the [MultiMesh].
+				A value of [code]0[/code] gives fast but low quality interpolation, a value of [code]1[/code] gives slower but higher quality interpolation.
 			</description>
 		</method>
 		<method name="multimesh_set_visible_instances">
@@ -2539,7 +2678,7 @@
 			<return type="void" />
 			<argument index="0" name="forbidden" type="bool" />
 			<description>
-				If asynchronous shader compilation is enabled, this controls whether [constant SpatialMaterial.ASYNC_MODE_HIDDEN] is obeyed.
+				If asynchronous shader compilation is enabled, this controls whether [constant Material3D.ASYNC_MODE_HIDDEN] is obeyed.
 				For instance, you may want to enable this temporarily before taking a screenshot. This ensures everything is visible even if shaders with async mode [i]hidden[/i] are not ready yet.
 				Reflection probes use this internally to ensure they capture everything regardless the shaders are ready or not.
 			</description>
@@ -3474,7 +3613,10 @@
 		<constant name="LIGHT_PARAM_SHADOW_BIAS_SPLIT_SCALE" value="15" enum="LightParam">
 			Increases bias on further splits to fix self-shadowing that only occurs far away from the camera.
 		</constant>
-		<constant name="LIGHT_PARAM_MAX" value="16" enum="LightParam">
+		<constant name="LIGHT_PARAM_SHADOW_FADE_START" value="16" enum="LightParam">
+			Proportion of [constant LIGHT_PARAM_SHADOW_MAX_DISTANCE] at which point the shadow starts to fade. At [constant LIGHT_PARAM_SHADOW_MAX_DISTANCE], the shadow will disappear. The default value is a balance between smooth fading and distant shadow visibility. If the camera moves fast and the [constant LIGHT_PARAM_SHADOW_MAX_DISTANCE] is low, consider lowering [constant LIGHT_PARAM_SHADOW_FADE_START] below [code]0.8[/code] to make shadow transitions less noticeable. On the other hand, if you tuned [constant LIGHT_PARAM_SHADOW_MAX_DISTANCE] to cover the entire scene, you can set [constant LIGHT_PARAM_SHADOW_FADE_START] to [code]1.0[/code] to prevent the shadow from fading in the distance (it will suddenly cut off instead).
+		</constant>
+		<constant name="LIGHT_PARAM_MAX" value="17" enum="LightParam">
 			Represents the size of the [enum LightParam] enum.
 		</constant>
 		<constant name="LIGHT_BAKE_DISABLED" value="0" enum="LightBakeMode">
@@ -3501,7 +3643,10 @@
 		<constant name="LIGHT_DIRECTIONAL_SHADOW_PARALLEL_2_SPLITS" value="1" enum="LightDirectionalShadowMode">
 			Use 2 splits for shadow projection when using directional light.
 		</constant>
-		<constant name="LIGHT_DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS" value="2" enum="LightDirectionalShadowMode">
+		<constant name="LIGHT_DIRECTIONAL_SHADOW_PARALLEL_3_SPLITS" value="2" enum="LightDirectionalShadowMode">
+			Use 3 splits for shadow projection when using directional light.
+		</constant>
+		<constant name="LIGHT_DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS" value="3" enum="LightDirectionalShadowMode">
 			Use 4 splits for shadow projection when using directional light.
 		</constant>
 		<constant name="LIGHT_DIRECTIONAL_SHADOW_DEPTH_RANGE_STABLE" value="0" enum="LightDirectionalShadowDepthRangeMode">
@@ -3788,6 +3933,12 @@
 		</constant>
 		<constant name="MULTIMESH_CUSTOM_DATA_FLOAT" value="2" enum="MultimeshCustomDataFormat">
 			MultiMesh custom data uses a float per component.
+		</constant>
+		<constant name="MULTIMESH_INTERP_QUALITY_FAST" value="0" enum="MultimeshPhysicsInterpolationQuality">
+			MultiMesh physics interpolation favours speed over quality.
+		</constant>
+		<constant name="MULTIMESH_INTERP_QUALITY_HIGH" value="1" enum="MultimeshPhysicsInterpolationQuality">
+			MultiMesh physics interpolation favours quality over speed.
 		</constant>
 		<constant name="REFLECTION_PROBE_UPDATE_ONCE" value="0" enum="ReflectionProbeUpdateMode">
 			Reflection probe will update reflections once and then stop.

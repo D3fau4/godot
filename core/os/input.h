@@ -48,7 +48,8 @@ public:
 		MOUSE_MODE_VISIBLE,
 		MOUSE_MODE_HIDDEN,
 		MOUSE_MODE_CAPTURED,
-		MOUSE_MODE_CONFINED
+		MOUSE_MODE_CONFINED,
+		MOUSE_MODE_CONFINED_HIDDEN,
 	};
 
 #undef CursorShape
@@ -99,6 +100,7 @@ public:
 	virtual void remove_joy_mapping(String p_guid) = 0;
 	virtual bool is_joy_known(int p_device) = 0;
 	virtual String get_joy_guid(int p_device) const = 0;
+	virtual bool should_ignore_device(int p_vendor_id, int p_product_id) const = 0;
 	virtual Vector2 get_joy_vibration_strength(int p_device) = 0;
 	virtual float get_joy_vibration_duration(int p_device) = 0;
 	virtual uint64_t get_joy_vibration_timestamp(int p_device) = 0;
@@ -107,7 +109,7 @@ public:
 	virtual void vibrate_handheld(int p_duration_ms = 500) = 0;
 
 	virtual Point2 get_mouse_position() const = 0;
-	virtual Point2 get_last_mouse_speed() const = 0;
+	virtual Point2 get_last_mouse_speed() = 0;
 	virtual int get_mouse_button_mask() const = 0;
 
 	virtual void warp_mouse_position(const Vector2 &p_to) = 0;

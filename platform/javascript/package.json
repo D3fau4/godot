@@ -14,16 +14,14 @@
     "format:engine": "npm run lint:engine -- --fix",
     "format:libs": "npm run lint:libs -- --fix",
     "format:modules": "npm run lint:modules -- --fix",
-    "format:tools": "npm run lint:tools -- --fix",
-    "serve": "serve"
+    "format:tools": "npm run lint:tools -- --fix"
   },
   "author": "Godot Engine contributors",
   "license": "MIT",
   "devDependencies": {
-    "eslint": "^8.47.0",
+    "eslint": "^8.46.0",
     "eslint-config-airbnb-base": "^15.0.0",
-    "eslint-plugin-import": "^2.28.1",
-    "jsdoc": "^4.0.2",
-    "serve": "^14.2.0"
+    "eslint-plugin-import": "^2.28.0",
+    "jsdoc": "^4.0.2"
   }
 }

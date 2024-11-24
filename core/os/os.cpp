@@ -30,6 +30,7 @@
 
 #include "os.h"
 
+#include "core/io/json.h"
 #include "core/os/dir_access.h"
 #include "core/os/file_access.h"
 #include "core/os/input.h"
@@ -39,6 +40,7 @@
 #include "servers/audio_server.h"
 
 #include <stdarg.h>
+#include <thread>
 
 OS *OS::singleton = nullptr;
 uint64_t OS::target_ticks = 0;
@@ -89,10 +91,6 @@ uint64_t OS::get_system_time_msecs() const {
 double OS::get_subsecond_unix_time() const {
 	return 0.0;
 }
-void OS::debug_break(){
-
-	// something
-};
 
 void OS::_set_logger(CompositeLogger *p_logger) {
 	if (_logger) {
@@ -189,10 +187,6 @@ int OS::get_process_id() const {
 	return -1;
 };
 
-void OS::vibrate_handheld(int p_duration_ms) {
-	WARN_PRINT("vibrate_handheld() only works with Android, iOS and HTML5");
-}
-
 bool OS::is_stdout_verbose() const {
 	return _verbose_stdout;
 }
@@ -225,7 +219,7 @@ bool OS::has_virtual_keyboard() const {
 	return false;
 }
 
-void OS::show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect, bool p_multiline, int p_max_input_length, int p_cursor_start, int p_cursor_end) {
+void OS::show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect, VirtualKeyboardType p_type, int p_max_input_length, int p_cursor_start, int p_cursor_end) {
 }
 
 void OS::hide_virtual_keyboard() {
@@ -521,11 +515,11 @@ void OS::swap_buffers() {
 }
 
 String OS::get_unique_id() const {
-	ERR_FAIL_V("");
+	return "";
 }
 
 int OS::get_processor_count() const {
-	return 1;
+	return std::thread::hardware_concurrency();
 }
 
 String OS::get_processor_name() const {
@@ -558,6 +552,75 @@ bool OS::can_use_threads() const {
 #else
 	return true;
 #endif
+}
+
+bool OS::tts_is_speaking() const {
+	WARN_PRINT("TTS is not supported by this platform.");
+	return false;
+}
+
+bool OS::tts_is_paused() const {
+	WARN_PRINT("TTS is not supported by this platform.");
+	return false;
+}
+
+void OS::tts_pause() {
+	WARN_PRINT("TTS is not supported by this platformr.");
+}
+
+void OS::tts_resume() {
+	WARN_PRINT("TTS is not supported by this platform.");
+}
+
+Array OS::tts_get_voices() const {
+	WARN_PRINT("TTS is not supported by this platform.");
+	return Array();
+}
+
+PoolStringArray OS::tts_get_voices_for_language(const String &p_language) const {
+	PoolStringArray ret;
+	Array voices = tts_get_voices();
+	for (int i = 0; i < voices.size(); i++) {
+		const Dictionary &voice = voices[i];
+		if (voice.has("id") && voice.has("language") && voice["language"].operator String().begins_with(p_language)) {
+			ret.push_back(voice["id"]);
+		}
+	}
+	return ret;
+}
+
+void OS::tts_speak(const String &p_text, const String &p_voice, int p_volume, float p_pitch, float p_rate, int p_utterance_id, bool p_interrupt) {
+	WARN_PRINT("TTS is not supported by this platform.");
+}
+
+void OS::tts_stop() {
+	WARN_PRINT("TTS is not supported by this platform.");
+}
+
+void OS::tts_set_utterance_callback(TTSUtteranceEvent p_event, Object *p_object, const StringName &p_callback) {
+	ERR_FAIL_INDEX(p_event, OS::TTS_UTTERANCE_MAX);
+	utterance_callback[p_event].object = p_object;
+	utterance_callback[p_event].cb_name = p_callback;
+}
+
+void OS::tts_post_utterance_event(TTSUtteranceEvent p_event, int p_id, int p_pos) {
+	ERR_FAIL_INDEX(p_event, OS::TTS_UTTERANCE_MAX);
+	switch (p_event) {
+		case OS::TTS_UTTERANCE_STARTED:
+		case OS::TTS_UTTERANCE_ENDED:
+		case OS::TTS_UTTERANCE_CANCELED: {
+			if (utterance_callback[p_event].object != nullptr) {
+				utterance_callback[p_event].object->call_deferred(utterance_callback[p_event].cb_name, p_id);
+			}
+		} break;
+		case OS::TTS_UTTERANCE_BOUNDARY: {
+			if (utterance_callback[p_event].object != nullptr) {
+				utterance_callback[p_event].object->call_deferred(utterance_callback[p_event].cb_name, p_pos, p_id);
+			}
+		} break;
+		default:
+			break;
+	}
 }
 
 OS::MouseMode OS::get_mouse_mode() const {
@@ -867,6 +930,58 @@ void OS::add_frame_delay(bool p_can_draw) {
 		current_ticks = get_ticks_usec();
 		target_ticks = MIN(MAX(target_ticks, current_ticks - dynamic_delay), current_ticks + dynamic_delay);
 	}
+}
+
+void OS::set_use_benchmark(bool p_use_benchmark) {
+	use_benchmark = p_use_benchmark;
+}
+
+bool OS::is_use_benchmark_set() {
+	return use_benchmark;
+}
+
+void OS::set_benchmark_file(const String &p_benchmark_file) {
+	benchmark_file = p_benchmark_file;
+}
+
+String OS::get_benchmark_file() {
+	return benchmark_file;
+}
+
+void OS::benchmark_begin_measure(const String &p_what) {
+#ifdef TOOLS_ENABLED
+	start_benchmark_from[p_what] = OS::get_singleton()->get_ticks_usec();
+#endif
+}
+void OS::benchmark_end_measure(const String &p_what) {
+#ifdef TOOLS_ENABLED
+	uint64_t total = OS::get_singleton()->get_ticks_usec() - start_benchmark_from[p_what];
+	double total_f = double(total) / double(1000000);
+
+	startup_benchmark_json[p_what] = total_f;
+#endif
+}
+
+void OS::benchmark_dump() {
+#ifdef TOOLS_ENABLED
+	if (!use_benchmark) {
+		return;
+	}
+	if (!benchmark_file.empty()) {
+		FileAccess *f = FileAccess::open(benchmark_file, FileAccess::WRITE);
+		if (f) {
+			f->store_string(JSON::print(startup_benchmark_json, "\t", false));
+		}
+	} else {
+		List<Variant> keys;
+		startup_benchmark_json.get_key_list(&keys);
+		print_line("BENCHMARK:");
+		for (List<Variant>::Element *E = keys.front(); E; E = E->next()) {
+			Variant &K = E->get();
+			print_line("\t-" + K.operator String() + ": " + startup_benchmark_json[K] + " sec.");
+		}
+	}
+#endif
 }
 
 OS::OS() {

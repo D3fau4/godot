@@ -39,6 +39,7 @@
 #include "scene/resources/style_box.h"
 #include "scene/resources/texture.h"
 #include "scene/scene_string_names.h"
+#include "servers/visual/visual_server_constants.h"
 #include "servers/visual/visual_server_raster.h"
 #include "servers/visual_server.h"
 
@@ -475,9 +476,6 @@ Transform2D CanvasItem::get_global_transform_with_canvas() const {
 }
 
 Transform2D CanvasItem::get_global_transform() const {
-#ifdef DEBUG_ENABLED
-	ERR_FAIL_COND_V(!is_inside_tree(), get_transform());
-#endif
 	if (global_invalid) {
 		const CanvasItem *pi = get_parent_item();
 		if (pi) {
@@ -487,6 +485,20 @@ Transform2D CanvasItem::get_global_transform() const {
 		}
 
 		global_invalid = false;
+	}
+
+	return global_transform;
+}
+
+// Same as get_global_transform() but no reset for `global_invalid`.
+Transform2D CanvasItem::get_global_transform_const() const {
+	if (global_invalid) {
+		const CanvasItem *pi = get_parent_item();
+		if (pi) {
+			global_transform = pi->get_global_transform_const() * get_transform();
+		} else {
+			global_transform = get_transform();
+		}
 	}
 
 	return global_transform;
@@ -564,6 +576,10 @@ void CanvasItem::_exit_canvas() {
 	}
 }
 
+void CanvasItem::_physics_interpolated_changed() {
+	VisualServer::get_singleton()->canvas_item_set_interpolated(canvas_item, is_physics_interpolated());
+}
+
 void CanvasItem::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
@@ -581,20 +597,19 @@ void CanvasItem::_notification(int p_what) {
 			if (!block_transform_notify && !xform_change.in_list()) {
 				get_tree()->xform_change_list.add(&xform_change);
 			}
-		} break;
-		case NOTIFICATION_MOVED_IN_PARENT: {
-			if (!is_inside_tree()) {
-				break;
-			}
 
-			if (canvas_group != "") {
-				get_tree()->call_group_flags(SceneTree::GROUP_CALL_UNIQUE, canvas_group, "_toplevel_raise_self");
-			} else {
-				CanvasItem *p = get_parent_item();
-				ERR_FAIL_COND(!p);
-				VisualServer::get_singleton()->canvas_item_set_draw_index(canvas_item, get_index());
+			// If using physics interpolation, reset for this node only,
+			// as a helper, as in most cases, users will want items reset when
+			// adding to the tree.
+			// In cases where they move immediately after adding,
+			// there will be little cost in having two resets as these are cheap,
+			// and it is worth it for convenience.
+			// Do not propagate to children, as each child of an added branch
+			// receives its own NOTIFICATION_ENTER_TREE, and this would
+			// cause unnecessary duplicate resets.
+			if (is_physics_interpolated_and_enabled()) {
+				notification(NOTIFICATION_RESET_PHYSICS_INTERPOLATION);
 			}
-
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
 			if (xform_change.in_list()) {
@@ -607,12 +622,43 @@ void CanvasItem::_notification(int p_what) {
 			}
 			global_invalid = true;
 		} break;
+		case NOTIFICATION_RESET_PHYSICS_INTERPOLATION: {
+			if (is_visible_in_tree() && is_physics_interpolated()) {
+				VisualServer::get_singleton()->canvas_item_reset_physics_interpolation(canvas_item);
+			}
+		} break;
+
 		case NOTIFICATION_DRAW:
 		case NOTIFICATION_TRANSFORM_CHANGED: {
 		} break;
 		case NOTIFICATION_VISIBILITY_CHANGED: {
 			emit_signal(SceneStringNames::get_singleton()->visibility_changed);
 		} break;
+	}
+}
+
+#ifdef DEV_ENABLED
+void CanvasItem::_name_changed_notify() {
+	// Even in DEV builds, there is no point in calling this unless we are debugging
+	// canvas item names. Even calling the stub function will be expensive, as there
+	// are a lot of canvas items.
+#ifdef VISUAL_SERVER_CANVAS_DEBUG_ITEM_NAMES
+	VisualServer::get_singleton()->canvas_item_set_name(canvas_item, get_name());
+#endif
+}
+#endif
+
+void CanvasItem::update_draw_order() {
+	if (!is_inside_tree()) {
+		return;
+	}
+
+	if (canvas_group != "") {
+		get_tree()->call_group_flags(SceneTree::GROUP_CALL_UNIQUE, canvas_group, "_toplevel_raise_self");
+	} else {
+		CanvasItem *p = get_parent_item();
+		ERR_FAIL_NULL(p);
+		VisualServer::get_singleton()->canvas_item_set_draw_index(canvas_item, get_index());
 	}
 }
 
@@ -693,6 +739,24 @@ void CanvasItem::set_light_mask(int p_light_mask) {
 
 int CanvasItem::get_light_mask() const {
 	return light_mask;
+}
+
+void CanvasItem::set_canvas_item_use_identity_transform(bool p_enable) {
+	// Prevent sending item transforms to VisualServer when using global coords.
+	_set_use_identity_transform(p_enable);
+
+	// Let VisualServer know not to concatenate the parent transform during the render.
+	VisualServer::get_singleton()->canvas_item_set_use_identity_transform(get_canvas_item(), p_enable);
+
+	if (is_inside_tree()) {
+		if (p_enable) {
+			// Make sure item is using identity transform in server.
+			VisualServer::get_singleton()->canvas_item_set_transform(get_canvas_item(), Transform2D());
+		} else {
+			// Make sure item transform is up to date in server if switching identity transform off.
+			VisualServer::get_singleton()->canvas_item_set_transform(get_canvas_item(), get_transform());
+		}
+	}
 }
 
 void CanvasItem::item_rect_changed(bool p_size_changed) {
@@ -889,6 +953,17 @@ void CanvasItem::draw_multimesh(const Ref<MultiMesh> &p_multimesh, const Ref<Tex
 	RID texture_rid = p_texture.is_valid() ? p_texture->get_rid() : RID();
 	RID normal_map_rid = p_normal_map.is_valid() ? p_normal_map->get_rid() : RID();
 	VisualServer::get_singleton()->canvas_item_add_multimesh(canvas_item, p_multimesh->get_rid(), texture_rid, normal_map_rid);
+}
+
+void CanvasItem::select_font(const Ref<Font> &p_font) {
+	// Purely to keep canvas item SDF state up to date for now.
+	bool new_font_sdf_selected = p_font.is_valid() && p_font->is_distance_field_hint();
+
+	if (font_sdf_selected != new_font_sdf_selected) {
+		ERR_FAIL_COND(!get_canvas_item().is_valid());
+		font_sdf_selected = new_font_sdf_selected;
+		VisualServer::get_singleton()->canvas_item_set_distance_field_mode(get_canvas_item(), font_sdf_selected);
+	}
 }
 
 void CanvasItem::draw_string(const Ref<Font> &p_font, const Point2 &p_pos, const String &p_text, const Color &p_modulate, int p_clip_w) {
@@ -1287,6 +1362,7 @@ CanvasItem::CanvasItem() :
 	global_invalid = true;
 	notify_local_transform = false;
 	notify_transform = false;
+	font_sdf_selected = false;
 	light_mask = 1;
 
 	C = nullptr;

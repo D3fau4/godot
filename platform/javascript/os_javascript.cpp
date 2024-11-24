@@ -31,6 +31,7 @@
 #include "os_javascript.h"
 
 #include "core/io/json.h"
+#include "core/project_settings.h"
 #include "drivers/gles2/rasterizer_gles2.h"
 #include "drivers/gles3/rasterizer_gles3.h"
 #include "drivers/unix/dir_access_unix.h"
@@ -64,6 +65,97 @@ void OS_JavaScript::request_quit_callback() {
 	}
 }
 
+bool OS_JavaScript::tts_is_speaking() const {
+	ERR_FAIL_COND_V_MSG(!tts, false, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	return godot_js_tts_is_speaking();
+}
+
+bool OS_JavaScript::tts_is_paused() const {
+	ERR_FAIL_COND_V_MSG(!tts, false, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	return godot_js_tts_is_paused();
+}
+
+void OS_JavaScript::update_voices_callback(int p_size, const char **p_voice) {
+	get_singleton()->voices.clear();
+	for (int i = 0; i < p_size; i++) {
+		Vector<String> tokens = String::utf8(p_voice[i]).split(";", true, 2);
+		if (tokens.size() == 2) {
+			Dictionary voice_d;
+			voice_d["name"] = tokens[1];
+			voice_d["id"] = tokens[1];
+			voice_d["language"] = tokens[0];
+			get_singleton()->voices.push_back(voice_d);
+		}
+	}
+}
+
+Array OS_JavaScript::tts_get_voices() const {
+	ERR_FAIL_COND_V_MSG(!tts, Array(), "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	godot_js_tts_get_voices(update_voices_callback);
+	return voices;
+}
+
+void OS_JavaScript::tts_speak(const String &p_text, const String &p_voice, int p_volume, float p_pitch, float p_rate, int p_utterance_id, bool p_interrupt) {
+	ERR_FAIL_COND_MSG(!tts, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	if (p_interrupt) {
+		tts_stop();
+	}
+
+	if (p_text.empty()) {
+		tts_post_utterance_event(OS::TTS_UTTERANCE_CANCELED, p_utterance_id);
+		return;
+	}
+
+	CharString string = p_text.utf8();
+	utterance_ids[p_utterance_id] = string;
+
+	godot_js_tts_speak(string.get_data(), p_voice.utf8().get_data(), CLAMP(p_volume, 0, 100), CLAMP(p_pitch, 0.f, 2.f), CLAMP(p_rate, 0.1f, 10.f), p_utterance_id, OS_JavaScript::_js_utterance_callback);
+}
+
+void OS_JavaScript::tts_pause() {
+	ERR_FAIL_COND_MSG(!tts, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	godot_js_tts_pause();
+}
+
+void OS_JavaScript::tts_resume() {
+	ERR_FAIL_COND_MSG(!tts, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	godot_js_tts_resume();
+}
+
+void OS_JavaScript::tts_stop() {
+	ERR_FAIL_COND_MSG(!tts, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	for (Map<int, CharString>::Element *E = utterance_ids.front(); E; E = E->next()) {
+		tts_post_utterance_event(OS::TTS_UTTERANCE_CANCELED, E->key());
+	}
+	utterance_ids.clear();
+	godot_js_tts_stop();
+}
+
+void OS_JavaScript::_js_utterance_callback(int p_event, int p_id, int p_pos) {
+	OS_JavaScript *ds = (OS_JavaScript *)OS::get_singleton();
+	if (ds->utterance_ids.has(p_id)) {
+		int pos = 0;
+		if ((TTSUtteranceEvent)p_event == OS::TTS_UTTERANCE_BOUNDARY) {
+			// Convert position from UTF-8 to UTF-32.
+			const CharString &string = ds->utterance_ids[p_id];
+			for (int i = 0; i < MIN(p_pos, string.length()); i++) {
+				uint8_t c = string[i];
+				if ((c & 0xe0) == 0xc0) {
+					i += 1;
+				} else if ((c & 0xf0) == 0xe0) {
+					i += 2;
+				} else if ((c & 0xf8) == 0xf0) {
+					i += 3;
+				}
+				pos++;
+			}
+		} else if ((TTSUtteranceEvent)p_event != OS::TTS_UTTERANCE_STARTED) {
+			ds->utterance_ids.erase(p_id);
+		}
+		ds->tts_post_utterance_event((TTSUtteranceEvent)p_event, p_id, pos);
+	}
+}
+
 // Files drop (implemented in JS for now).
 void OS_JavaScript::drop_files_callback(char **p_filev, int p_filec) {
 	OS_JavaScript *os = get_singleton();
@@ -84,6 +176,9 @@ void OS_JavaScript::send_notification_callback(int p_notification) {
 	}
 	if (p_notification == MainLoop::NOTIFICATION_WM_MOUSE_ENTER || p_notification == MainLoop::NOTIFICATION_WM_MOUSE_EXIT) {
 		os->cursor_inside_canvas = p_notification == MainLoop::NOTIFICATION_WM_MOUSE_ENTER;
+	}
+	if (godot_js_is_ime_focused() && (p_notification == MainLoop::NOTIFICATION_WM_FOCUS_IN || p_notification == MainLoop::NOTIFICATION_WM_FOCUS_OUT)) {
+		return;
 	}
 	MainLoop *loop = os->get_main_loop();
 	if (loop) {
@@ -191,22 +286,39 @@ static void dom2godot_mod(Ref<InputEventWithModifiers> ev, int p_mod) {
 void OS_JavaScript::key_callback(int p_pressed, int p_repeat, int p_modifiers) {
 	OS_JavaScript *os = get_singleton();
 	JSKeyEvent &key_event = os->key_event;
+
+	const String code = String::utf8(key_event.code);
+	const String key = String::utf8(key_event.key);
+
 	// Resume audio context after input in case autoplay was denied.
 	os->resume_audio();
 
-	Ref<InputEventKey> ev;
-	ev.instance();
-	ev->set_echo(p_repeat);
-	ev->set_scancode(dom_code2godot_scancode(key_event.code, key_event.key, false));
-	ev->set_physical_scancode(dom_code2godot_scancode(key_event.code, key_event.key, true));
-	ev->set_pressed(p_pressed);
-	dom2godot_mod(ev, p_modifiers);
-
-	String unicode = String::utf8(key_event.key);
-	if (unicode.length() == 1) {
-		ev->set_unicode(unicode[0]);
+	if (os->ime_started) {
+		return;
 	}
-	os->input->parse_input_event(ev);
+
+	wchar_t c = 0x00;
+	String unicode = key;
+	if (unicode.length() == 1) {
+		c = unicode[0];
+	}
+	uint32_t keycode = dom_code2godot_scancode(code.utf8().get_data(), key.utf8().get_data(), false);
+	uint32_t scancode = dom_code2godot_scancode(code.utf8().get_data(), key.utf8().get_data(), true);
+
+	OS_JavaScript::KeyEvent ke;
+
+	ke.pressed = p_pressed;
+	ke.echo = p_repeat;
+	ke.raw = true;
+	ke.keycode = keycode;
+	ke.physical_keycode = scancode;
+	ke.unicode = c;
+	ke.mod = p_modifiers;
+
+	if (os->key_event_pos >= os->key_event_buffer.size()) {
+		os->key_event_buffer.resize(1 + os->key_event_pos);
+	}
+	os->key_event_buffer.write[os->key_event_pos++] = ke;
 
 	// Make sure to flush all events so we can call restricted APIs inside the event.
 	os->input->flush_buffered_events();
@@ -453,9 +565,10 @@ void OS_JavaScript::set_custom_mouse_cursor(const RES &p_cursor, CursorShape p_s
 }
 
 void OS_JavaScript::set_mouse_mode(OS::MouseMode p_mode) {
-	ERR_FAIL_COND_MSG(p_mode == MOUSE_MODE_CONFINED, "MOUSE_MODE_CONFINED is not supported for the HTML5 platform.");
-	if (p_mode == get_mouse_mode())
+	ERR_FAIL_COND_MSG(p_mode == MOUSE_MODE_CONFINED || p_mode == MOUSE_MODE_CONFINED_HIDDEN, "MOUSE_MODE_CONFINED is not supported for the HTML5 platform.");
+	if (p_mode == get_mouse_mode()) {
 		return;
+	}
 
 	if (p_mode == MOUSE_MODE_VISIBLE) {
 		godot_js_display_cursor_set_visible(1);
@@ -486,7 +599,7 @@ OS::MouseMode OS_JavaScript::get_mouse_mode() const {
 int OS_JavaScript::mouse_wheel_callback(double p_delta_x, double p_delta_y) {
 	OS_JavaScript *os = get_singleton();
 
-	if (!godot_js_display_canvas_is_focused()) {
+	if (!godot_js_display_canvas_is_focused() && !godot_js_is_ime_focused()) {
 		if (os->cursor_inside_canvas) {
 			godot_js_display_canvas_focus();
 		} else {
@@ -577,6 +690,90 @@ void OS_JavaScript::touch_callback(int p_type, int p_count) {
 	}
 }
 
+// IME.
+void OS_JavaScript::ime_callback(int p_type, const char *p_text) {
+	OS_JavaScript *os = get_singleton();
+
+	// Resume audio context after input in case autoplay was denied.
+	os->resume_audio();
+
+	switch (p_type) {
+		case 0: {
+			// IME start.
+			os->ime_text = String();
+			os->ime_selection = Vector2i();
+			for (int i = os->key_event_pos - 1; i >= 0; i--) {
+				// Delete last raw keydown event from query.
+				if (os->key_event_buffer[i].pressed && os->key_event_buffer[i].raw) {
+					os->key_event_buffer.remove(i);
+					os->key_event_pos--;
+					break;
+				}
+			}
+			os->get_main_loop()->notification(MainLoop::NOTIFICATION_OS_IME_UPDATE);
+			os->ime_started = true;
+		} break;
+		case 1: {
+			// IME update.
+			if (os->ime_active && os->ime_started) {
+				os->ime_text = String::utf8(p_text);
+				os->ime_selection = Vector2i(os->ime_text.length(), os->ime_text.length());
+				os->get_main_loop()->notification(MainLoop::NOTIFICATION_OS_IME_UPDATE);
+			}
+		} break;
+		case 2: {
+			// IME commit.
+			if (os->ime_active && os->ime_started) {
+				os->ime_started = false;
+
+				os->ime_text = String();
+				os->ime_selection = Vector2i();
+				os->get_main_loop()->notification(MainLoop::NOTIFICATION_OS_IME_UPDATE);
+
+				String text = String::utf8(p_text);
+				for (int i = 0; i < text.length(); i++) {
+					OS_JavaScript::KeyEvent ke;
+
+					ke.pressed = true;
+					ke.echo = false;
+					ke.raw = false;
+					ke.keycode = 0;
+					ke.physical_keycode = 0;
+					ke.unicode = text[i];
+					ke.mod = 0;
+
+					if (os->key_event_pos >= os->key_event_buffer.size()) {
+						os->key_event_buffer.resize(1 + os->key_event_pos);
+					}
+					os->key_event_buffer.write[os->key_event_pos++] = ke;
+				}
+			}
+		} break;
+		default:
+			break;
+	}
+
+	os->process_keys();
+	os->input->flush_buffered_events();
+}
+
+void OS_JavaScript::set_ime_active(const bool p_active) {
+	ime_active = p_active;
+	godot_js_set_ime_active(p_active);
+}
+
+void OS_JavaScript::set_ime_position(const Point2 &p_pos) {
+	godot_js_set_ime_position(p_pos.x, p_pos.y);
+}
+
+Point2 OS_JavaScript::get_ime_selection() const {
+	return ime_selection;
+}
+
+String OS_JavaScript::get_ime_text() const {
+	return ime_text;
+}
+
 // Gamepad
 void OS_JavaScript::gamepad_callback(int p_index, int p_connected, const char *p_id, const char *p_guid) {
 	InputDefault *input = get_singleton()->input;
@@ -612,6 +809,26 @@ void OS_JavaScript::process_joypads() {
 			input->joy_axis(idx, a, s_axes[a]);
 		}
 	}
+}
+
+void OS_JavaScript::process_keys() {
+	for (int i = 0; i < key_event_pos; i++) {
+		const OS_JavaScript::KeyEvent &ke = key_event_buffer[i];
+
+		Ref<InputEventKey> ev;
+		ev.instance();
+		ev->set_pressed(ke.pressed);
+		ev->set_echo(ke.echo);
+		ev->set_scancode(ke.keycode);
+		ev->set_physical_scancode(ke.physical_keycode);
+		ev->set_unicode(ke.unicode);
+		if (ke.raw) {
+			dom2godot_mod(ev, ke.mod);
+		}
+
+		input->parse_input_event(ev);
+	}
+	key_event_pos = 0;
 }
 
 bool OS_JavaScript::is_joy_known(int p_device) {
@@ -685,6 +902,8 @@ Error OS_JavaScript::initialize(const VideoMode &p_desired, int p_video_driver, 
 	godot_js_display_setup_canvas(video_mode.width, video_mode.height, video_mode.fullscreen, is_hidpi_allowed() ? 1 : 0);
 
 	swap_ok_cancel = godot_js_display_is_swap_ok_cancel() == 1;
+
+	tts = GLOBAL_GET("audio/general/text_to_speech");
 
 	EmscriptenWebGLContextAttributes attributes;
 	emscripten_webgl_init_context_attributes(&attributes);
@@ -764,6 +983,7 @@ Error OS_JavaScript::initialize(const VideoMode &p_desired, int p_video_driver, 
 	godot_js_input_gamepad_cb(&OS_JavaScript::gamepad_callback);
 	godot_js_input_paste_cb(&OS_JavaScript::update_clipboard_callback);
 	godot_js_input_drop_files_cb(&OS_JavaScript::drop_files_callback);
+	godot_js_set_ime_cb(&OS_JavaScript::ime_callback, &OS_JavaScript::key_callback, key_event.code, key_event.key);
 
 	// JS Display interface (js/libs/library_godot_display.js)
 	godot_js_display_fullscreen_cb(&OS_JavaScript::fullscreen_change_callback);
@@ -805,8 +1025,8 @@ bool OS_JavaScript::has_virtual_keyboard() const {
 	return godot_js_display_vk_available() != 0;
 }
 
-void OS_JavaScript::show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect, bool p_multiline, int p_max_input_length, int p_cursor_start, int p_cursor_end) {
-	godot_js_display_vk_show(p_existing_text.utf8().get_data(), p_multiline, p_cursor_start, p_cursor_end);
+void OS_JavaScript::show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect, VirtualKeyboardType p_type, int p_max_input_length, int p_cursor_start, int p_cursor_end) {
+	godot_js_display_vk_show(p_existing_text.utf8().get_data(), p_type, p_cursor_start, p_cursor_end);
 }
 
 void OS_JavaScript::hide_virtual_keyboard() {
@@ -845,8 +1065,8 @@ bool OS_JavaScript::main_loop_iterate() {
 		godot_js_os_fs_sync(&OS_JavaScript::fs_sync_callback);
 	}
 
+	process_keys();
 	input->flush_buffered_events();
-
 	if (godot_js_input_gamepad_sample() == OK) {
 		process_joypads();
 	}
@@ -910,6 +1130,10 @@ bool OS_JavaScript::is_process_running(const ProcessID &p_pid) const {
 
 int OS_JavaScript::get_processor_count() const {
 	return godot_js_os_hw_concurrency_get();
+}
+
+String OS_JavaScript::get_unique_id() const {
+	ERR_FAIL_V_MSG("", "OS::get_unique_id() is not available on the HTML5 platform.");
 }
 
 bool OS_JavaScript::_check_internal_feature_support(const String &p_feature) {
@@ -1060,6 +1284,12 @@ Error OS_JavaScript::pwa_update() {
 	return godot_js_pwa_update() ? FAILED : OK;
 }
 
+void OS_JavaScript::force_fs_sync() {
+	if (is_userfs_persistent()) {
+		idb_needs_sync = true;
+	}
+}
+
 bool OS_JavaScript::is_userfs_persistent() const {
 	return idb_available;
 }
@@ -1093,6 +1323,7 @@ OS_JavaScript::OS_JavaScript() {
 	main_loop = NULL;
 	visual_server = NULL;
 
+	tts = false;
 	swap_ok_cancel = false;
 	idb_available = godot_js_os_fs_is_persistent() != 0;
 	idb_needs_sync = false;

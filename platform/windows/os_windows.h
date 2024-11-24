@@ -48,6 +48,7 @@
 #ifdef XAUDIO2_ENABLED
 #include "drivers/xaudio2/audio_driver_xaudio2.h"
 #endif
+#include "tts_windows.h"
 
 #include <dwmapi.h>
 #include <fcntl.h>
@@ -313,6 +314,8 @@ class OS_Windows : public OS {
 	uint64_t ticks_start;
 	uint64_t ticks_per_second;
 
+	TTS_Windows *tts = nullptr;
+
 	bool old_invalid;
 	bool outside;
 	int old_x, old_y;
@@ -434,10 +437,19 @@ public:
 	LRESULT WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 	virtual void alert(const String &p_alert, const String &p_title = "ALERT!");
-	String get_stdin_string(bool p_block);
+	String get_stdin_string();
 
 	void set_mouse_mode(MouseMode p_mode);
 	MouseMode get_mouse_mode() const;
+
+	virtual bool tts_is_speaking() const;
+	virtual bool tts_is_paused() const;
+	virtual Array tts_get_voices() const;
+
+	virtual void tts_speak(const String &p_text, const String &p_voice, int p_volume = 50, float p_pitch = 1.f, float p_rate = 1.f, int p_utterance_id = 0, bool p_interrupt = false);
+	virtual void tts_pause();
+	virtual void tts_resume();
+	virtual void tts_stop();
 
 	virtual void warp_mouse_position(const Point2 &p_to);
 	virtual Point2 get_mouse_position() const;
@@ -540,7 +552,6 @@ public:
 
 	virtual String get_locale() const;
 
-	virtual int get_processor_count() const;
 	virtual String get_processor_name() const;
 
 	virtual LatinKeyboardVariant get_latin_keyboard_variant() const;

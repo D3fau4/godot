@@ -52,6 +52,8 @@
 #import "native_video_view.h"
 #import "view_controller.h"
 
+#include "tts_ios.h"
+
 #import <UIKit/UIKit.h>
 #include <dlfcn.h>
 #include <sys/sysctl.h>
@@ -86,6 +88,48 @@ const char *OSIPhone::get_video_driver_name(int p_driver) const {
 OSIPhone *OSIPhone::get_singleton() {
 	return (OSIPhone *)OS::get_singleton();
 };
+
+bool OSIPhone::tts_is_speaking() const {
+	ERR_FAIL_COND_V_MSG(!tts, false, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	ERR_FAIL_COND_V(!tts, false);
+	return [tts isSpeaking];
+}
+
+bool OSIPhone::tts_is_paused() const {
+	ERR_FAIL_COND_V_MSG(!tts, false, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	ERR_FAIL_COND_V(!tts, false);
+	return [tts isPaused];
+}
+
+Array OSIPhone::tts_get_voices() const {
+	ERR_FAIL_COND_V_MSG(!tts, Array(), "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	ERR_FAIL_COND_V(!tts, Array());
+	return [tts getVoices];
+}
+
+void OSIPhone::tts_speak(const String &p_text, const String &p_voice, int p_volume, float p_pitch, float p_rate, int p_utterance_id, bool p_interrupt) {
+	ERR_FAIL_COND_MSG(!tts, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	ERR_FAIL_COND(!tts);
+	[tts speak:p_text voice:p_voice volume:p_volume pitch:p_pitch rate:p_rate utterance_id:p_utterance_id interrupt:p_interrupt];
+}
+
+void OSIPhone::tts_pause() {
+	ERR_FAIL_COND_MSG(!tts, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	ERR_FAIL_COND(!tts);
+	[tts pauseSpeaking];
+}
+
+void OSIPhone::tts_resume() {
+	ERR_FAIL_COND_MSG(!tts, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	ERR_FAIL_COND(!tts);
+	[tts resumeSpeaking];
+}
+
+void OSIPhone::tts_stop() {
+	ERR_FAIL_COND_MSG(!tts, "Enable the \"audio/general/text_to_speech\" project setting to use text-to-speech.");
+	ERR_FAIL_COND(!tts);
+	[tts stopSpeaking];
+}
 
 void OSIPhone::set_data_dir(String p_dir) {
 	DirAccess *da = DirAccess::open(p_dir);
@@ -161,6 +205,12 @@ Error OSIPhone::initialize(const VideoMode &p_desired, int p_video_driver, int p
 	// FIXME: Reimplement threaded rendering
 	if (get_render_thread_mode() != RENDER_THREAD_UNSAFE) {
 		visual_server = memnew(VisualServerWrapMT(visual_server, false));
+	}
+
+	// Init TTS
+	bool tts_enabled = GLOBAL_GET("audio/general/text_to_speech");
+	if (tts_enabled) {
+		tts = [[TTS_IOS alloc] init];
 	}
 
 	visual_server->init();
@@ -255,6 +305,7 @@ void OSIPhone::touch_press(int p_idx, int p_x, int p_y, bool p_pressed, bool p_d
 	ev->set_index(p_idx);
 	ev->set_pressed(p_pressed);
 	ev->set_position(Vector2(p_x, p_y));
+	ev->set_double_tap(p_doubleclick);
 	perform_event(ev);
 };
 
@@ -453,12 +504,46 @@ bool OSIPhone::has_virtual_keyboard() const {
 	return true;
 };
 
-void OSIPhone::show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect, bool p_multiline, int p_max_input_length, int p_cursor_start, int p_cursor_end) {
+void OSIPhone::show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect, VirtualKeyboardType p_type, int p_max_input_length, int p_cursor_start, int p_cursor_end) {
 	NSString *existingString = [[NSString alloc] initWithUTF8String:p_existing_text.utf8().get_data()];
+
+	AppDelegate.viewController.keyboardView.keyboardType = UIKeyboardTypeDefault;
+	AppDelegate.viewController.keyboardView.textContentType = nil;
+	switch (p_type) {
+		case KEYBOARD_TYPE_DEFAULT: {
+			AppDelegate.viewController.keyboardView.keyboardType = UIKeyboardTypeDefault;
+		} break;
+		case KEYBOARD_TYPE_MULTILINE: {
+			AppDelegate.viewController.keyboardView.keyboardType = UIKeyboardTypeDefault;
+		} break;
+		case KEYBOARD_TYPE_NUMBER: {
+			AppDelegate.viewController.keyboardView.keyboardType = UIKeyboardTypeNumberPad;
+		} break;
+		case KEYBOARD_TYPE_NUMBER_DECIMAL: {
+			AppDelegate.viewController.keyboardView.keyboardType = UIKeyboardTypeDecimalPad;
+		} break;
+		case KEYBOARD_TYPE_PHONE: {
+			AppDelegate.viewController.keyboardView.keyboardType = UIKeyboardTypePhonePad;
+			AppDelegate.viewController.keyboardView.textContentType = UITextContentTypeTelephoneNumber;
+		} break;
+		case KEYBOARD_TYPE_EMAIL_ADDRESS: {
+			AppDelegate.viewController.keyboardView.keyboardType = UIKeyboardTypeEmailAddress;
+			AppDelegate.viewController.keyboardView.textContentType = UITextContentTypeEmailAddress;
+		} break;
+		case KEYBOARD_TYPE_PASSWORD: {
+			AppDelegate.viewController.keyboardView.keyboardType = UIKeyboardTypeDefault;
+			if (@available(iOS 11.0, *)) {
+				AppDelegate.viewController.keyboardView.textContentType = UITextContentTypePassword;
+			}
+		} break;
+		case KEYBOARD_TYPE_URL: {
+			AppDelegate.viewController.keyboardView.keyboardType = UIKeyboardTypeWebSearch;
+			AppDelegate.viewController.keyboardView.textContentType = UITextContentTypeURL;
+		} break;
+	}
 
 	[AppDelegate.viewController.keyboardView
 			becomeFirstResponderWithString:existingString
-								 multiline:p_multiline
 							   cursorStart:p_cursor_start
 								 cursorEnd:p_cursor_end];
 };
@@ -568,7 +653,11 @@ int OSIPhone::get_screen_dpi(int p_screen) const {
 }
 
 float OSIPhone::get_screen_refresh_rate(int p_screen) const {
-	return [UIScreen mainScreen].maximumFramesPerSecond;
+	float fps = [UIScreen mainScreen].maximumFramesPerSecond;
+	if ([NSProcessInfo processInfo].lowPowerModeEnabled) {
+		fps = 60;
+	}
+	return fps;
 }
 
 Rect2 OSIPhone::get_window_safe_area() const {
@@ -773,6 +862,26 @@ void OSIPhone::on_focus_in() {
 		}
 
 		audio_driver.start();
+	}
+}
+
+void OSIPhone::on_enter_background() {
+	// Do not check for is_focused, because on_focus_out will always be fired first by applicationWillResignActive.
+
+	if (get_main_loop()) {
+		get_main_loop()->notification(MainLoop::NOTIFICATION_APP_PAUSED);
+	}
+
+	on_focus_out();
+}
+
+void OSIPhone::on_exit_background() {
+	if (!is_focused) {
+		on_focus_in();
+
+		if (get_main_loop()) {
+			get_main_loop()->notification(MainLoop::NOTIFICATION_APP_RESUMED);
+		}
 	}
 }
 

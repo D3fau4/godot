@@ -101,6 +101,12 @@ void Node::_notification(int p_notification) {
 			get_tree()->node_count++;
 			orphan_node_count--;
 
+			// Allow physics interpolated nodes to automatically reset when added to the tree
+			// (this is to save the user doing this manually each time).
+			if (get_tree()->is_physics_interpolation_enabled()) {
+				_set_physics_interpolation_reset_requested(true);
+			}
+
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
 			ERR_FAIL_COND(!get_viewport());
@@ -123,6 +129,11 @@ void Node::_notification(int p_notification) {
 			if (data.path_cache) {
 				memdelete(data.path_cache);
 				data.path_cache = nullptr;
+			}
+		} break;
+		case NOTIFICATION_PAUSED: {
+			if (is_physics_interpolated_and_enabled() && is_inside_tree()) {
+				reset_physics_interpolation();
 			}
 		} break;
 		case NOTIFICATION_PATH_CHANGED: {
@@ -221,14 +232,14 @@ void Node::_propagate_physics_interpolated(bool p_interpolated) {
 	data.blocked--;
 }
 
-void Node::_propagate_physics_interpolation_reset_requested() {
+void Node::_propagate_physics_interpolation_reset_requested(bool p_requested) {
 	if (is_physics_interpolated()) {
-		data.physics_interpolation_reset_requested = true;
+		data.physics_interpolation_reset_requested = p_requested;
 	}
 
 	data.blocked++;
 	for (int i = 0; i < data.children.size(); i++) {
-		data.children[i]->_propagate_physics_interpolation_reset_requested();
+		data.children[i]->_propagate_physics_interpolation_reset_requested(p_requested);
 	}
 	data.blocked--;
 }
@@ -426,14 +437,9 @@ void Node::move_child(Node *p_child, int p_pos) {
 	}
 	// notification second
 	move_child_notify(p_child);
-	for (int i = motion_from; i <= motion_to; i++) {
-		data.children[i]->notification(NOTIFICATION_MOVED_IN_PARENT);
-	}
-	for (const Map<StringName, GroupData>::Element *E = p_child->data.grouped.front(); E; E = E->next()) {
-		if (E->get().group) {
-			E->get().group->changed = true;
-		}
-	}
+	Viewport::notify_canvas_parent_children_moved(*this, motion_from, motion_to + 1);
+
+	p_child->_propagate_groups_dirty();
 
 	data.blocked--;
 }
@@ -444,6 +450,18 @@ void Node::raise() {
 	}
 
 	data.parent->move_child(this, data.parent->data.children.size() - 1);
+}
+
+void Node::_propagate_groups_dirty() {
+	for (const Map<StringName, GroupData>::Element *E = data.grouped.front(); E; E = E->next()) {
+		if (E->get().group) {
+			E->get().group->changed = true;
+		}
+	}
+
+	for (int i = 0; i < data.children.size(); i++) {
+		data.children[i]->_propagate_groups_dirty();
+	}
 }
 
 void Node::add_child_notify(Node *p_child) {
@@ -509,25 +527,27 @@ void Node::set_pause_mode(PauseMode p_mode) {
 	}
 
 	bool prev_inherits = data.pause_mode == PAUSE_MODE_INHERIT;
+	bool prev_can_process = is_inside_tree() && can_process();
 	data.pause_mode = p_mode;
 	if (!is_inside_tree()) {
 		return; //pointless
 	}
-	if ((data.pause_mode == PAUSE_MODE_INHERIT) == prev_inherits) {
-		return; ///nothing changed
-	}
+	if ((data.pause_mode == PAUSE_MODE_INHERIT) != prev_inherits) {
+		Node *owner = nullptr;
 
-	Node *owner = nullptr;
-
-	if (data.pause_mode == PAUSE_MODE_INHERIT) {
-		if (data.parent) {
-			owner = data.parent->data.pause_owner;
+		if (data.pause_mode == PAUSE_MODE_INHERIT) {
+			if (data.parent) {
+				owner = data.parent->data.pause_owner;
+			}
+		} else {
+			owner = this;
 		}
-	} else {
-		owner = this;
-	}
 
-	_propagate_pause_owner(owner);
+		_propagate_pause_owner(owner);
+	}
+	if (prev_can_process != can_process()) {
+		_propagate_pause_change_notification(can_process() ? NOTIFICATION_UNPAUSED : NOTIFICATION_PAUSED);
+	}
 }
 
 Node::PauseMode Node::get_pause_mode() const {
@@ -541,6 +561,16 @@ void Node::_propagate_pause_owner(Node *p_owner) {
 	data.pause_owner = p_owner;
 	for (int i = 0; i < data.children.size(); i++) {
 		data.children[i]->_propagate_pause_owner(p_owner);
+	}
+}
+
+void Node::_propagate_pause_change_notification(int p_notification) {
+	notification(p_notification);
+
+	for (int i = 0; i < data.children.size(); i++) {
+		if (data.children[i]->data.pause_mode == PAUSE_MODE_INHERIT) {
+			data.children[i]->_propagate_pause_change_notification(p_notification);
+		}
 	}
 }
 
@@ -866,16 +896,22 @@ void Node::set_physics_interpolation_mode(PhysicsInterpolationMode p_mode) {
 
 	// if swapping from interpolated to non-interpolated, use this as
 	// an extra means to cause a reset
-	if (is_physics_interpolated() && !interpolate) {
-		reset_physics_interpolation();
+	if (is_physics_interpolated() && !interpolate && is_inside_tree()) {
+		propagate_notification(NOTIFICATION_RESET_PHYSICS_INTERPOLATION);
 	}
 
 	_propagate_physics_interpolated(interpolate);
 }
 
 void Node::reset_physics_interpolation() {
-	if (is_physics_interpolated_and_enabled()) {
+	if (is_inside_tree()) {
 		propagate_notification(NOTIFICATION_RESET_PHYSICS_INTERPOLATION);
+
+		// If `reset_physics_interpolation()` is called explicitly by the user
+		// (e.g. from scripts) then we prevent deferred auto-resets taking place.
+		// The user is trusted to call reset in the right order, and auto-reset
+		// will interfere with their control of prev / curr, so should be turned off.
+		_propagate_physics_interpolation_reset_requested(false);
 	}
 }
 
@@ -1043,7 +1079,15 @@ StringName Node::get_name() const {
 
 void Node::_set_name_nocheck(const StringName &p_name) {
 	data.name = p_name;
+#ifdef DEV_ENABLED
+	_name_changed_notify();
+#endif
 }
+
+#ifdef DEV_ENABLED
+void Node::_name_changed_notify() {
+}
+#endif
 
 void Node::set_name(const String &p_name) {
 	String name = p_name.validate_node_name();
@@ -1070,6 +1114,10 @@ void Node::set_name(const String &p_name) {
 		get_tree()->node_renamed(this);
 		get_tree()->tree_changed();
 	}
+
+#ifdef DEV_ENABLED
+	_name_changed_notify();
+#endif
 }
 
 static bool node_hrcr = false;
@@ -1254,7 +1302,7 @@ void Node::_generate_serial_child_name(const Node *p_child, StringName &name) co
 void Node::_add_child_nocheck(Node *p_child, const StringName &p_name) {
 	//add a child node quickly, without name validation
 
-	p_child->data.name = p_name;
+	p_child->_set_name_nocheck(p_name);
 	p_child->data.pos = data.children.size();
 	data.children.push_back(p_child);
 	p_child->data.parent = this;
@@ -1268,15 +1316,9 @@ void Node::_add_child_nocheck(Node *p_child, const StringName &p_name) {
 	//recognize children created in this node constructor
 	p_child->data.parent_owned = data.in_constructor;
 	add_child_notify(p_child);
-
-	// Allow physics interpolated nodes to automatically reset when added to the tree
-	// (this is to save the user doing this manually each time)
-	if (is_inside_tree() && get_tree()->is_physics_interpolation_enabled()) {
-		p_child->_propagate_physics_interpolation_reset_requested();
-	}
 }
 
-void Node::add_child(Node *p_child, bool p_legible_unique_name) {
+void Node::add_child(Node *p_child, bool p_force_readable_name) {
 	ERR_FAIL_NULL(p_child);
 	ERR_FAIL_COND_MSG(p_child == this, vformat("Can't add child '%s' to itself.", p_child->get_name())); // adding to itself!
 	ERR_FAIL_COND_MSG(p_child->data.parent, vformat("Can't add child '%s' to '%s', already has a parent '%s'.", p_child->get_name(), get_name(), p_child->data.parent->get_name())); //Fail if node has a parent
@@ -1286,16 +1328,16 @@ void Node::add_child(Node *p_child, bool p_legible_unique_name) {
 	ERR_FAIL_COND_MSG(data.blocked > 0, "Parent node is busy setting up children, add_node() failed. Consider using call_deferred(\"add_child\", child) instead.");
 
 	/* Validate name */
-	_validate_child_name(p_child, p_legible_unique_name);
+	_validate_child_name(p_child, p_force_readable_name);
 
 	_add_child_nocheck(p_child, p_child->data.name);
 }
 
-void Node::add_child_below_node(Node *p_node, Node *p_child, bool p_legible_unique_name) {
+void Node::add_child_below_node(Node *p_node, Node *p_child, bool p_force_readable_name) {
 	ERR_FAIL_NULL(p_node);
 	ERR_FAIL_NULL(p_child);
 
-	add_child(p_child, p_legible_unique_name);
+	add_child(p_child, p_force_readable_name);
 
 	if (p_node->data.parent == this) {
 		move_child(p_child, p_node->get_position_in_parent() + 1);
@@ -1346,8 +1388,10 @@ void Node::remove_child(Node *p_child) {
 
 	for (int i = idx; i < child_count; i++) {
 		children[i]->data.pos = i;
-		children[i]->notification(NOTIFICATION_MOVED_IN_PARENT);
 	}
+
+	Viewport::notify_canvas_parent_children_moved(*this, idx, child_count);
+	Viewport::notify_canvas_parent_child_count_reduced(*this);
 
 	p_child->data.parent = nullptr;
 	p_child->data.pos = -1;
@@ -1417,23 +1461,14 @@ Node *Node::get_node_or_null(const NodePath &p_path) const {
 			}
 
 		} else if (name.is_node_unique_name()) {
-			if (current->data.owned_unique_nodes.size()) {
-				// Has unique nodes in ownership
-				Node **unique = current->data.owned_unique_nodes.getptr(name);
-				if (!unique) {
-					return nullptr;
-				}
-				next = *unique;
-			} else if (current->data.owner) {
-				Node **unique = current->data.owner->data.owned_unique_nodes.getptr(name);
-				if (!unique) {
-					return nullptr;
-				}
-				next = *unique;
-			} else {
+			Node **unique = current->data.owned_unique_nodes.getptr(name);
+			if (!unique && current->data.owner) {
+				unique = current->data.owner->data.owned_unique_nodes.getptr(name);
+			}
+			if (!unique) {
 				return nullptr;
 			}
-
+			next = *unique;
 		} else {
 			next = nullptr;
 
@@ -2129,6 +2164,8 @@ void Node::get_storable_properties(Set<StringName> &r_storable_properties) const
 }
 
 String Node::to_string() {
+	// This code doesn't print the script's name, it calls to_string() if you override it in a Node's script,
+	// which you only do if you specifically want to customize how the node should be represented by print().
 	if (get_script_instance()) {
 		bool valid;
 		String ret = get_script_instance()->to_string(&valid);
@@ -2173,6 +2210,14 @@ Node *Node::_duplicate(int p_flags, Map<const Node *, Node *> *r_duplimap) const
 
 	bool instanced = false;
 
+	// No need to load a packed scene more than once if features
+	// several times in the branch being duplicated.
+	struct LoadedPackedScene {
+		Ref<PackedScene> scene;
+		String filename;
+	};
+	LocalVector<LoadedPackedScene> loaded_scenes;
+
 	if (Object::cast_to<InstancePlaceholder>(this)) {
 		const InstancePlaceholder *ip = Object::cast_to<const InstancePlaceholder>(this);
 		InstancePlaceholder *nip = memnew(InstancePlaceholder);
@@ -2180,7 +2225,25 @@ Node *Node::_duplicate(int p_flags, Map<const Node *, Node *> *r_duplimap) const
 		node = nip;
 
 	} else if ((p_flags & DUPLICATE_USE_INSTANCING) && get_filename() != String()) {
-		Ref<PackedScene> res = ResourceLoader::load(get_filename());
+		// already loaded?
+		int found = -1;
+		for (unsigned int n = 0; n < loaded_scenes.size(); n++) {
+			if (loaded_scenes[n].filename == get_filename()) {
+				found = n;
+				break;
+			}
+		}
+		Ref<PackedScene> res = Ref<PackedScene>();
+		if (found != -1) {
+			res = loaded_scenes[found].scene;
+		} else {
+			LoadedPackedScene ps;
+			ps.filename = get_filename();
+			ps.scene = ResourceLoader::load(get_filename());
+			res = ps.scene;
+			loaded_scenes.push_back(ps);
+		}
+
 		ERR_FAIL_COND_V(res.is_null(), nullptr);
 		PackedScene::GenEditState ges = PackedScene::GEN_EDIT_STATE_DISABLED;
 #ifdef TOOLS_ENABLED
@@ -2877,10 +2940,14 @@ void Node::print_stray_nodes() {
 }
 
 void Node::queue_delete() {
+	// There are users which instantiate multiple scene trees for their games.
+	// Use the node's own tree to handle its deletion when relevant.
 	if (is_inside_tree()) {
 		get_tree()->queue_delete(this);
 	} else {
-		SceneTree::get_singleton()->queue_delete(this);
+		SceneTree *tree = SceneTree::get_singleton();
+		ERR_FAIL_NULL_MSG(tree, "Can't queue free a node when no SceneTree is available.");
+		tree->queue_delete(this);
 	}
 }
 
@@ -2972,6 +3039,10 @@ bool Node::is_displayed_folded() const {
 	return data.display_folded;
 }
 
+bool Node::is_node_ready() const {
+	return !data.ready_first;
+}
+
 void Node::request_ready() {
 	data.ready_first = true;
 }
@@ -2982,11 +3053,11 @@ void Node::_bind_methods() {
 	GLOBAL_DEF("node/name_casing", NAME_CASING_PASCAL_CASE);
 	ProjectSettings::get_singleton()->set_custom_property_info("node/name_casing", PropertyInfo(Variant::INT, "node/name_casing", PROPERTY_HINT_ENUM, "PascalCase,camelCase,snake_case"));
 
-	ClassDB::bind_method(D_METHOD("add_child_below_node", "node", "child_node", "legible_unique_name"), &Node::add_child_below_node, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("add_child_below_node", "node", "child_node", "force_readable_name"), &Node::add_child_below_node, DEFVAL(false));
 
 	ClassDB::bind_method(D_METHOD("set_name", "name"), &Node::set_name);
 	ClassDB::bind_method(D_METHOD("get_name"), &Node::get_name);
-	ClassDB::bind_method(D_METHOD("add_child", "node", "legible_unique_name"), &Node::add_child, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("add_child", "node", "force_readable_name"), &Node::add_child, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("remove_child", "node"), &Node::remove_child);
 	ClassDB::bind_method(D_METHOD("get_child_count"), &Node::get_child_count);
 	ClassDB::bind_method(D_METHOD("get_children"), &Node::_get_children);
@@ -3064,12 +3135,15 @@ void Node::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_scene_instance_load_placeholder", "load_placeholder"), &Node::set_scene_instance_load_placeholder);
 	ClassDB::bind_method(D_METHOD("get_scene_instance_load_placeholder"), &Node::get_scene_instance_load_placeholder);
+	ClassDB::bind_method(D_METHOD("set_editable_instance", "node", "is_editable"), &Node::set_editable_instance);
+	ClassDB::bind_method(D_METHOD("is_editable_instance", "node"), &Node::is_editable_instance);
 
 	ClassDB::bind_method(D_METHOD("get_viewport"), &Node::get_viewport);
 
 	ClassDB::bind_method(D_METHOD("queue_free"), &Node::queue_delete);
 
 	ClassDB::bind_method(D_METHOD("request_ready"), &Node::request_ready);
+	ClassDB::bind_method(D_METHOD("is_node_ready"), &Node::is_node_ready);
 
 	ClassDB::bind_method(D_METHOD("set_network_master", "id", "recursive"), &Node::set_network_master, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("get_network_master"), &Node::get_network_master);
@@ -3084,6 +3158,7 @@ void Node::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("_set_editor_description", "editor_description"), &Node::set_editor_description);
 	ClassDB::bind_method(D_METHOD("_get_editor_description"), &Node::get_editor_description);
+	ADD_GROUP("Editor Description", "editor_");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "editor_description", PROPERTY_HINT_MULTILINE_TEXT, "", PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_INTERNAL), "_set_editor_description", "_get_editor_description");
 
 	ClassDB::bind_method(D_METHOD("_set_import_path", "import_path"), &Node::set_import_path);
@@ -3135,6 +3210,7 @@ void Node::_bind_methods() {
 	BIND_CONSTANT(NOTIFICATION_DRAG_BEGIN);
 	BIND_CONSTANT(NOTIFICATION_DRAG_END);
 	BIND_CONSTANT(NOTIFICATION_PATH_CHANGED);
+	BIND_CONSTANT(NOTIFICATION_CHILD_ORDER_CHANGED);
 	BIND_CONSTANT(NOTIFICATION_INTERNAL_PROCESS);
 	BIND_CONSTANT(NOTIFICATION_INTERNAL_PHYSICS_PROCESS);
 	BIND_CONSTANT(NOTIFICATION_POST_ENTER_TREE);
@@ -3175,6 +3251,7 @@ void Node::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("tree_exited"));
 	ADD_SIGNAL(MethodInfo("child_entered_tree", PropertyInfo(Variant::OBJECT, "node", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT, "Node")));
 	ADD_SIGNAL(MethodInfo("child_exiting_tree", PropertyInfo(Variant::OBJECT, "node", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT, "Node")));
+	ADD_SIGNAL(MethodInfo("child_order_changed"));
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "pause_mode", PROPERTY_HINT_ENUM, "Inherit,Stop,Process"), "set_pause_mode", "get_pause_mode");
 

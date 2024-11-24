@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="ScriptEditor" inherits="PanelContainer" version="3.5" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="ScriptEditor" inherits="PanelContainer" version="3.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		Godot editor's script editor.
 	</brief_description>
@@ -23,6 +23,12 @@
 			<argument index="1" name="data" type="Variant" />
 			<argument index="2" name="from" type="Control" />
 			<description>
+			</description>
+		</method>
+		<method name="get_base_editor" qualifiers="const">
+			<return type="Control" />
+			<description>
+				Returns the underlying [Control] used for editing scripts. For text scripts, this is a [TextEdit].
 			</description>
 		</method>
 		<method name="get_current_script">

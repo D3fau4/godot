@@ -33,21 +33,12 @@
 #include "core/math/transform_interpolator.h"
 #include "core/os/os.h"
 #include "visual_server_globals.h"
+#include "visual_server_light_culler.h"
 #include "visual_server_raster.h"
 
 #include <new>
 
 /* CAMERA API */
-
-Transform VisualServerScene::Camera::get_transform_interpolated() const {
-	if (!interpolated) {
-		return transform;
-	}
-
-	Transform final;
-	TransformInterpolator::interpolate_transform_via_method(transform_prev, transform, final, Engine::get_singleton()->get_physics_interpolation_fraction(), interpolation_method);
-	return final;
-}
 
 RID VisualServerScene::camera_create() {
 	Camera *camera = memnew(Camera);
@@ -82,59 +73,11 @@ void VisualServerScene::camera_set_frustum(RID p_camera, float p_size, Vector2 p
 	camera->zfar = p_z_far;
 }
 
-void VisualServerScene::camera_reset_physics_interpolation(RID p_camera) {
-	Camera *camera = camera_owner.get(p_camera);
-	ERR_FAIL_COND(!camera);
-
-	if (_interpolation_data.interpolation_enabled && camera->interpolated) {
-		_interpolation_data.camera_teleport_list.push_back(p_camera);
-	}
-}
-
-void VisualServerScene::camera_set_interpolated(RID p_camera, bool p_interpolated) {
-	Camera *camera = camera_owner.get(p_camera);
-	ERR_FAIL_COND(!camera);
-	camera->interpolated = p_interpolated;
-}
-
 void VisualServerScene::camera_set_transform(RID p_camera, const Transform &p_transform) {
 	Camera *camera = camera_owner.get(p_camera);
 	ERR_FAIL_COND(!camera);
 
 	camera->transform = p_transform.orthonormalized();
-
-	if (_interpolation_data.interpolation_enabled) {
-		if (camera->interpolated) {
-			if (!camera->on_interpolate_transform_list) {
-				_interpolation_data.camera_transform_update_list_curr->push_back(p_camera);
-				camera->on_interpolate_transform_list = true;
-			}
-
-			// decide on the interpolation method .. slerp if possible
-			camera->interpolation_method = TransformInterpolator::find_method(camera->transform_prev.basis, camera->transform.basis);
-
-#if defined(DEBUG_ENABLED) && defined(TOOLS_ENABLED)
-			if (!Engine::get_singleton()->is_in_physics_frame()) {
-				// Effectively a WARN_PRINT_ONCE but after a certain number of occurrences.
-				static int32_t warn_count = -256;
-				if ((warn_count == 0) && GLOBAL_GET("debug/settings/physics_interpolation/enable_warnings")) {
-					WARN_PRINT("[Physics interpolation] Camera interpolation is being triggered from outside physics process, this might lead to issues (possibly benign).");
-				}
-				warn_count++;
-			}
-#endif
-		} else {
-#if defined(DEBUG_ENABLED) && defined(TOOLS_ENABLED)
-			if (Engine::get_singleton()->is_in_physics_frame()) {
-				static int32_t warn_count = -256;
-				if ((warn_count == 0) && GLOBAL_GET("debug/settings/physics_interpolation/enable_warnings")) {
-					WARN_PRINT("[Physics interpolation] Non-interpolated Camera is being triggered from physics process, this might lead to issues (possibly benign).");
-				}
-				warn_count++;
-			}
-#endif
-		}
-	}
 }
 
 void VisualServerScene::camera_set_cull_mask(RID p_camera, uint32_t p_layers) {
@@ -184,8 +127,8 @@ VisualServerScene::SpatialPartitionID VisualServerScene::SpatialPartitioningScen
 	p_userdata->bvh_pairable_mask = p_pairable_mask;
 	p_userdata->bvh_pairable_type = p_pairable_type;
 
-	uint32_t tree_id = p_pairable ? 1 : 0;
-	uint32_t tree_collision_mask = 3;
+	uint32_t tree_collision_mask = 0;
+	uint32_t tree_id = find_tree_id_and_collision_mask(p_pairable, tree_collision_mask);
 
 	return _bvh.create(p_userdata, p_userdata->visible, tree_id, tree_collision_mask, p_aabb, p_subindex) + 1;
 }
@@ -227,8 +170,8 @@ void VisualServerScene::SpatialPartitioningScene_BVH::set_pairable(Instance *p_i
 	p_instance->bvh_pairable_mask = p_pairable_mask;
 	p_instance->bvh_pairable_type = p_pairable_type;
 
-	uint32_t tree_id = p_pairable ? 1 : 0;
-	uint32_t tree_collision_mask = 3;
+	uint32_t tree_collision_mask = 0;
+	uint32_t tree_id = find_tree_id_and_collision_mask(p_pairable, tree_collision_mask);
 
 	_bvh.set_tree(handle - 1, tree_id, tree_collision_mask);
 }
@@ -337,7 +280,7 @@ void *VisualServerScene::_instance_pair(void *p_self, SpatialPartitionID, Instan
 		List<InstanceLightData::PairInfo>::Element *E = light->geometries.push_back(pinfo);
 
 		if (geom->can_cast_shadows) {
-			light->shadow_dirty = true;
+			light->make_shadow_dirty();
 		}
 		geom->lighting_dirty = true;
 
@@ -409,7 +352,7 @@ void VisualServerScene::_instance_unpair(void *p_self, SpatialPartitionID, Insta
 		light->geometries.erase(E);
 
 		if (geom->can_cast_shadows) {
-			light->shadow_dirty = true;
+			light->make_shadow_dirty();
 		}
 		geom->lighting_dirty = true;
 
@@ -489,6 +432,12 @@ void VisualServerScene::pre_draw(bool p_will_draw) {
 	// will not be drawn)
 	if (_interpolation_data.interpolation_enabled) {
 		update_interpolation_frame(p_will_draw);
+	}
+
+	// Opportunity to cheaply get any project settings that have changed.
+	if (ProjectSettings::get_singleton()->has_changes()) {
+		light_culler->set_caster_culling_active(GLOBAL_GET("rendering/quality/shadows/caster_culling"));
+		light_culler->set_light_culling_active(GLOBAL_GET("rendering/quality/shadows/light_culling"));
 	}
 }
 
@@ -789,7 +738,31 @@ void VisualServerScene::instance_set_layer_mask(RID p_instance, uint32_t p_mask)
 	Instance *instance = instance_owner.get(p_instance);
 	ERR_FAIL_COND(!instance);
 
+	if (instance->layer_mask == p_mask) {
+		return;
+	}
+
 	instance->layer_mask = p_mask;
+
+	// update lights to show / hide shadows according to the new mask
+	if ((1 << instance->base_type) & VS::INSTANCE_GEOMETRY_MASK) {
+		InstanceGeometryData *geom = static_cast<InstanceGeometryData *>(instance->base_data);
+
+		if (geom->can_cast_shadows) {
+			for (List<Instance *>::Element *E = geom->lighting.front(); E; E = E->next()) {
+				InstanceLightData *light = static_cast<InstanceLightData *>(E->get()->base_data);
+				light->make_shadow_dirty();
+			}
+		}
+	}
+}
+
+void VisualServerScene::instance_set_pivot_data(RID p_instance, float p_sorting_offset, bool p_use_aabb_center) {
+	Instance *instance = instance_owner.get(p_instance);
+	ERR_FAIL_COND(!instance);
+
+	instance->sorting_offset = p_sorting_offset;
+	instance->use_aabb_center = p_use_aabb_center;
 }
 
 void VisualServerScene::instance_set_pivot_data(RID p_instance, float p_sorting_offset, bool p_use_aabb_center) {
@@ -805,7 +778,13 @@ void VisualServerScene::instance_reset_physics_interpolation(RID p_instance) {
 	ERR_FAIL_COND(!instance);
 
 	if (_interpolation_data.interpolation_enabled && instance->interpolated) {
-		_interpolation_data.instance_teleport_list.push_back(p_instance);
+		instance->transform_prev = instance->transform_curr;
+		instance->transform_checksum_prev = instance->transform_checksum_curr;
+
+#ifdef VISUAL_SERVER_DEBUG_PHYSICS_INTERPOLATION
+		print_line("instance_reset_physics_interpolation .. tick " + itos(Engine::get_singleton()->get_physics_frames()));
+		print_line("\tprev " + rtos(instance->transform_prev.origin.x) + ", curr " + rtos(instance->transform_curr.origin.x));
+#endif
 	}
 }
 
@@ -818,6 +797,10 @@ void VisualServerScene::instance_set_interpolated(RID p_instance, bool p_interpo
 void VisualServerScene::instance_set_transform(RID p_instance, const Transform &p_transform) {
 	Instance *instance = instance_owner.get(p_instance);
 	ERR_FAIL_COND(!instance);
+
+#ifdef VISUAL_SERVER_DEBUG_PHYSICS_INTERPOLATION
+	print_line("instance_set_transform " + rtos(p_transform.origin.x) + " .. tick " + itos(Engine::get_singleton()->get_physics_frames()));
+#endif
 
 	if (!(_interpolation_data.interpolation_enabled && instance->interpolated) || !instance->scenario) {
 		if (instance->transform == p_transform) {
@@ -842,24 +825,7 @@ void VisualServerScene::instance_set_transform(RID p_instance, const Transform &
 
 #if defined(DEBUG_ENABLED) && defined(TOOLS_ENABLED)
 		if ((_interpolation_data.interpolation_enabled && !instance->interpolated) && (Engine::get_singleton()->is_in_physics_frame())) {
-			static int32_t warn_count = 0;
-			warn_count++;
-			if (((warn_count % 2048) == 0) && GLOBAL_GET("debug/settings/physics_interpolation/enable_warnings")) {
-				String node_name;
-				ObjectID id = instance->object_id;
-				if (id != 0) {
-					if (ObjectDB::get_instance(id)) {
-						Node *node = Object::cast_to<Node>(ObjectDB::get_instance(id));
-						if (node && node->is_inside_tree()) {
-							node_name = "\"" + String(node->get_path()) + "\"";
-						} else {
-							node_name = "\"unknown\"";
-						}
-					}
-				}
-
-				WARN_PRINT("[Physics interpolation] Non-interpolated Instance is being triggered from physics process, this might lead to issues: " + node_name + " (possibly benign).");
-			}
+			PHYSICS_INTERPOLATION_NODE_WARNING(instance->object_id, "Non-interpolated triggered from physics process");
 		}
 #endif
 
@@ -895,6 +861,10 @@ void VisualServerScene::instance_set_transform(RID p_instance, const Transform &
 
 	instance->transform_curr = p_transform;
 
+#ifdef VISUAL_SERVER_DEBUG_PHYSICS_INTERPOLATION
+	print_line("\tprev " + rtos(instance->transform_prev.origin.x) + ", curr " + rtos(instance->transform_curr.origin.x));
+#endif
+
 	// keep checksums up to date
 	instance->transform_checksum_curr = new_checksum;
 
@@ -927,39 +897,9 @@ void VisualServerScene::instance_set_transform(RID p_instance, const Transform &
 
 #if defined(DEBUG_ENABLED) && defined(TOOLS_ENABLED)
 	if (!Engine::get_singleton()->is_in_physics_frame()) {
-		static int32_t warn_count = 0;
-		warn_count++;
-		if (((warn_count % 2048) == 0) && GLOBAL_GET("debug/settings/physics_interpolation/enable_warnings")) {
-			String node_name;
-			ObjectID id = instance->object_id;
-			if (id != 0) {
-				if (ObjectDB::get_instance(id)) {
-					Node *node = Object::cast_to<Node>(ObjectDB::get_instance(id));
-					if (node && node->is_inside_tree()) {
-						node_name = "\"" + String(node->get_path()) + "\"";
-					} else {
-						node_name = "\"unknown\"";
-					}
-				}
-			}
-
-			WARN_PRINT("[Physics interpolation] Instance interpolation is being triggered from outside physics process, this might lead to issues: " + node_name + " (possibly benign).");
-		}
+		PHYSICS_INTERPOLATION_NODE_WARNING(instance->object_id, "Interpolated triggered from outside physics process");
 	}
 #endif
-}
-
-void VisualServerScene::InterpolationData::notify_free_camera(RID p_rid, Camera &r_camera) {
-	r_camera.on_interpolate_transform_list = false;
-
-	if (!interpolation_enabled) {
-		return;
-	}
-
-	// if the camera was on any of the lists, remove
-	camera_transform_update_list_curr->erase_multiple_unordered(p_rid);
-	camera_transform_update_list_prev->erase_multiple_unordered(p_rid);
-	camera_teleport_list.erase_multiple_unordered(p_rid);
 }
 
 void VisualServerScene::InterpolationData::notify_free_instance(RID p_rid, Instance &r_instance) {
@@ -974,10 +914,13 @@ void VisualServerScene::InterpolationData::notify_free_instance(RID p_rid, Insta
 	instance_interpolate_update_list.erase_multiple_unordered(p_rid);
 	instance_transform_update_list_curr->erase_multiple_unordered(p_rid);
 	instance_transform_update_list_prev->erase_multiple_unordered(p_rid);
-	instance_teleport_list.erase_multiple_unordered(p_rid);
 }
 
 void VisualServerScene::update_interpolation_tick(bool p_process) {
+#ifdef VISUAL_SERVER_DEBUG_PHYSICS_INTERPOLATION
+	print_line("update_interpolation_tick " + itos(Engine::get_singleton()->get_physics_frames()));
+#endif
+
 	// update interpolation in storage
 	VSG::storage->update_interpolation_tick(p_process);
 
@@ -1034,63 +977,11 @@ void VisualServerScene::update_interpolation_tick(bool p_process) {
 
 	// prepare for the next iteration
 	_interpolation_data.instance_transform_update_list_curr->clear();
-
-	// CAMERAS
-	// detect any that were on the previous transform list that are no longer active,
-	for (unsigned int n = 0; n < _interpolation_data.camera_transform_update_list_prev->size(); n++) {
-		const RID &rid = (*_interpolation_data.camera_transform_update_list_prev)[n];
-		Camera *camera = camera_owner.getornull(rid);
-
-		// no longer active? (either the instance deleted or no longer being transformed)
-		if (camera && !camera->on_interpolate_transform_list) {
-			camera->transform = camera->transform_prev;
-		}
-	}
-
-	// cameras , swap any current with previous
-	for (unsigned int n = 0; n < _interpolation_data.camera_transform_update_list_curr->size(); n++) {
-		const RID &rid = (*_interpolation_data.camera_transform_update_list_curr)[n];
-		Camera *camera = camera_owner.getornull(rid);
-		if (camera) {
-			camera->transform_prev = camera->transform;
-			camera->on_interpolate_transform_list = false;
-		}
-	}
-
-	// we maintain a mirror list for the transform updates, so we can detect when an instance
-	// is no longer being transformed, and remove it from the interpolate list
-	SWAP(_interpolation_data.camera_transform_update_list_curr, _interpolation_data.camera_transform_update_list_prev);
-
-	// prepare for the next iteration
-	_interpolation_data.camera_transform_update_list_curr->clear();
 }
 
 void VisualServerScene::update_interpolation_frame(bool p_process) {
 	// update interpolation in storage
 	VSG::storage->update_interpolation_frame(p_process);
-
-	// teleported instances
-	for (unsigned int n = 0; n < _interpolation_data.instance_teleport_list.size(); n++) {
-		const RID &rid = _interpolation_data.instance_teleport_list[n];
-		Instance *instance = instance_owner.getornull(rid);
-		if (instance) {
-			instance->transform_prev = instance->transform_curr;
-			instance->transform_checksum_prev = instance->transform_checksum_curr;
-		}
-	}
-
-	_interpolation_data.instance_teleport_list.clear();
-
-	// camera teleports
-	for (unsigned int n = 0; n < _interpolation_data.camera_teleport_list.size(); n++) {
-		const RID &rid = _interpolation_data.camera_teleport_list[n];
-		Camera *camera = camera_owner.getornull(rid);
-		if (camera) {
-			camera->transform_prev = camera->transform;
-		}
-	}
-
-	_interpolation_data.camera_teleport_list.clear();
 
 	if (p_process) {
 		real_t f = Engine::get_singleton()->get_physics_interpolation_fraction();
@@ -1100,6 +991,10 @@ void VisualServerScene::update_interpolation_frame(bool p_process) {
 			Instance *instance = instance_owner.getornull(rid);
 			if (instance) {
 				TransformInterpolator::interpolate_transform_via_method(instance->transform_prev, instance->transform_curr, instance->transform, f, instance->interpolation_method);
+
+#ifdef VISUAL_SERVER_DEBUG_PHYSICS_INTERPOLATION
+				print_line("\t\tinterpolated: " + rtos(instance->transform.origin.x) + "\t( prev " + rtos(instance->transform_prev.origin.x) + ", curr " + rtos(instance->transform_curr.origin.x) + " ) on tick " + itos(Engine::get_singleton()->get_physics_frames()));
+#endif
 
 				// make sure AABBs are constantly up to date through the interpolation
 				_instance_queue_update(instance, true);
@@ -1201,7 +1096,7 @@ void VisualServerScene::instance_set_visible(RID p_instance, bool p_visible) {
 		if (geom->can_cast_shadows) {
 			for (List<Instance *>::Element *E = geom->lighting.front(); E; E = E->next()) {
 				InstanceLightData *light = static_cast<InstanceLightData *>(E->get()->base_data);
-				light->shadow_dirty = true;
+				light->make_shadow_dirty();
 			}
 		}
 	}
@@ -2004,11 +1899,6 @@ void VisualServerScene::instance_geometry_set_material_overlay(RID p_instance, R
 	}
 }
 
-void VisualServerScene::instance_geometry_set_draw_range(RID p_instance, float p_min, float p_max, float p_min_margin, float p_max_margin) {
-}
-void VisualServerScene::instance_geometry_set_as_instance_lod(RID p_instance, RID p_as_lod_of_instance) {
-}
-
 void VisualServerScene::_update_instance(Instance *p_instance) {
 	p_instance->version++;
 
@@ -2027,7 +1917,7 @@ void VisualServerScene::_update_instance(Instance *p_instance) {
 		InstanceLightData *light = static_cast<InstanceLightData *>(p_instance->base_data);
 
 		VSG::scene_render->light_instance_set_transform(light->instance, *instance_xform);
-		light->shadow_dirty = true;
+		light->make_shadow_dirty();
 	}
 
 	if (p_instance->base_type == VS::INSTANCE_REFLECTION_PROBE) {
@@ -2059,7 +1949,7 @@ void VisualServerScene::_update_instance(Instance *p_instance) {
 		if (geom->can_cast_shadows) {
 			for (List<Instance *>::Element *E = geom->lighting.front(); E; E = E->next()) {
 				InstanceLightData *light = static_cast<InstanceLightData *>(E->get()->base_data);
-				light->shadow_dirty = true;
+				light->make_shadow_dirty();
 			}
 		}
 
@@ -2278,20 +2168,19 @@ _FORCE_INLINE_ static void _light_capture_sample_octree(const RasterizerStorage:
 				half >>= 1;
 			}
 
-			if (cell == RasterizerStorage::LightmapCaptureOctree::CHILD_EMPTY) {
-				alpha[c][n] = 0;
-			} else {
+			if (cell != RasterizerStorage::LightmapCaptureOctree::CHILD_EMPTY) {
 				alpha[c][n] = p_octree[cell].alpha;
 
 				for (int i = 0; i < 6; i++) {
 					//anisotropic read light
 					float amount = p_dir.dot(aniso_normal[i]);
-					if (amount < 0) {
-						amount = 0;
+
+					if (amount > 0) {
+						constexpr float ONE_1024TH = 1.0 / 1024.0;
+						color[c][n].x += p_octree[cell].light[i][0] * ONE_1024TH * amount;
+						color[c][n].y += p_octree[cell].light[i][1] * ONE_1024TH * amount;
+						color[c][n].z += p_octree[cell].light[i][2] * ONE_1024TH * amount;
 					}
-					color[c][n].x += p_octree[cell].light[i][0] / 1024.0 * amount;
-					color[c][n].y += p_octree[cell].light[i][1] / 1024.0 * amount;
-					color[c][n].z += p_octree[cell].light[i][2] / 1024.0 * amount;
 				}
 			}
 
@@ -2302,15 +2191,24 @@ _FORCE_INLINE_ static void _light_capture_sample_octree(const RasterizerStorage:
 	float target_level_size = size >> target_level;
 	Vector3 pos_fract[2];
 
-	pos_fract[0].x = Math::fmod(pos.x, target_level_size) / target_level_size;
-	pos_fract[0].y = Math::fmod(pos.y, target_level_size) / target_level_size;
-	pos_fract[0].z = Math::fmod(pos.z, target_level_size) / target_level_size;
+	float target_level_size_inv = 1.0f / target_level_size;
+	real_t res;
+	res = pos.x * target_level_size_inv;
+	pos_fract[0].x = res - (int)res;
+	res = pos.y * target_level_size_inv;
+	pos_fract[0].y = res - (int)res;
+	res = pos.z * target_level_size_inv;
+	pos_fract[0].z = res - (int)res;
 
 	target_level_size = size >> MAX(0, target_level - 1);
 
-	pos_fract[1].x = Math::fmod(pos.x, target_level_size) / target_level_size;
-	pos_fract[1].y = Math::fmod(pos.y, target_level_size) / target_level_size;
-	pos_fract[1].z = Math::fmod(pos.z, target_level_size) / target_level_size;
+	target_level_size_inv = 1.0f / target_level_size;
+	res = pos.x * target_level_size_inv;
+	pos_fract[1].x = res - (int)res;
+	res = pos.y * target_level_size_inv;
+	pos_fract[1].y = res - (int)res;
+	res = pos.z * target_level_size_inv;
+	pos_fract[1].z = res - (int)res;
 
 	float alpha_interp[2];
 	Vector3 color_interp[2];
@@ -2427,7 +2325,7 @@ void VisualServerScene::_update_instance_lightmap_captures(Instance *p_instance)
 	p_instance->lightmap_capture_data.write[0].a = interior ? 0.0f : 1.0f;
 }
 
-bool VisualServerScene::_light_instance_update_shadow(Instance *p_instance, const Transform p_cam_transform, const CameraMatrix &p_cam_projection, bool p_cam_orthogonal, RID p_shadow_atlas, Scenario *p_scenario) {
+bool VisualServerScene::_light_instance_update_shadow(Instance *p_instance, const Transform p_cam_transform, const CameraMatrix &p_cam_projection, bool p_cam_orthogonal, RID p_shadow_atlas, Scenario *p_scenario, uint32_t p_visible_layers) {
 	InstanceLightData *light = static_cast<InstanceLightData *>(p_instance->base_data);
 
 	Transform light_transform = p_instance->transform;
@@ -2437,6 +2335,15 @@ bool VisualServerScene::_light_instance_update_shadow(Instance *p_instance, cons
 
 	switch (VSG::storage->light_get_type(p_instance->base)) {
 		case VS::LIGHT_DIRECTIONAL: {
+			// Directional light always needs preparing as it takes a different path to other lights.
+			light_culler->prepare_light(*p_instance);
+
+			// Directional lights can always do a tighter cull.
+			// This should occur because shadow_dirty_count is never decremented for directional lights.
+#ifdef DEV_ENABLED
+			DEV_CHECK_ONCE(!light->is_shadow_update_full());
+#endif
+
 			float max_distance = p_cam_projection.get_z_far();
 			float shadow_max = VSG::storage->light_get_param(p_instance->base, VS::LIGHT_PARAM_SHADOW_MAX_DISTANCE);
 			if (shadow_max > 0 && !p_cam_orthogonal) { //its impractical (and leads to unwanted behaviors) to set max distance in orthogonal camera
@@ -2460,7 +2367,7 @@ bool VisualServerScene::_light_instance_update_shadow(Instance *p_instance, cons
 
 				for (int i = 0; i < cull_count; i++) {
 					Instance *instance = instance_shadow_cull_result[i];
-					if (!instance->visible || !((1 << instance->base_type) & VS::INSTANCE_GEOMETRY_MASK) || !static_cast<InstanceGeometryData *>(instance->base_data)->can_cast_shadows) {
+					if (!instance->visible || !((1 << instance->base_type) & VS::INSTANCE_GEOMETRY_MASK) || !static_cast<InstanceGeometryData *>(instance->base_data)->can_cast_shadows || !(p_visible_layers & instance->layer_mask)) {
 						continue;
 					}
 
@@ -2497,6 +2404,9 @@ bool VisualServerScene::_light_instance_update_shadow(Instance *p_instance, cons
 					break;
 				case VS::LIGHT_DIRECTIONAL_SHADOW_PARALLEL_2_SPLITS:
 					splits = 2;
+					break;
+				case VS::LIGHT_DIRECTIONAL_SHADOW_PARALLEL_3_SPLITS:
+					splits = 3;
 					break;
 				case VS::LIGHT_DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS:
 					splits = 4;
@@ -2663,7 +2573,7 @@ bool VisualServerScene::_light_instance_update_shadow(Instance *p_instance, cons
 				for (int j = 0; j < cull_count; j++) {
 					float min, max;
 					Instance *instance = instance_shadow_cull_result[j];
-					if (!instance->visible || !((1 << instance->base_type) & VS::INSTANCE_GEOMETRY_MASK) || !static_cast<InstanceGeometryData *>(instance->base_data)->can_cast_shadows) {
+					if (!instance->visible || !((1 << instance->base_type) & VS::INSTANCE_GEOMETRY_MASK) || !static_cast<InstanceGeometryData *>(instance->base_data)->can_cast_shadows || !(p_visible_layers & instance->layer_mask)) {
 						cull_count--;
 						SWAP(instance_shadow_cull_result[j], instance_shadow_cull_result[cull_count]);
 						j--;
@@ -2692,6 +2602,10 @@ bool VisualServerScene::_light_instance_update_shadow(Instance *p_instance, cons
 					VSG::scene_render->light_instance_set_shadow_transform(light->instance, ortho_camera, ortho_transform, 0, distances[i + 1], i, bias_scale);
 				}
 
+				// Do a secondary cull to remove casters that don't intersect with the camera frustum.
+				// Note this could possibly be done in a more efficient place if we can share the cull results for each split.
+				cull_count = light_culler->cull(cull_count, instance_shadow_cull_result);
+
 				VSG::scene_render->render_shadow(light->instance, p_shadow_atlas, i, (RasterizerScene::InstanceBase **)instance_shadow_cull_result, cull_count);
 			}
 
@@ -2716,11 +2630,17 @@ bool VisualServerScene::_light_instance_update_shadow(Instance *p_instance, cons
 					planes.write[5] = light_transform.xform(Plane(Vector3(0, 0, -z), 0));
 
 					int cull_count = p_scenario->sps->cull_convex(planes, instance_shadow_cull_result, MAX_INSTANCE_CULL, VS::INSTANCE_GEOMETRY_MASK);
+
+					// Do a secondary cull to remove casters that don't intersect with the camera frustum.
+					if (!light->is_shadow_update_full()) {
+						cull_count = light_culler->cull(cull_count, instance_shadow_cull_result);
+					}
+
 					Plane near_plane(light_transform.origin, light_transform.basis.get_axis(2) * z);
 
 					for (int j = 0; j < cull_count; j++) {
 						Instance *instance = instance_shadow_cull_result[j];
-						if (!instance->visible || !((1 << instance->base_type) & VS::INSTANCE_GEOMETRY_MASK) || !static_cast<InstanceGeometryData *>(instance->base_data)->can_cast_shadows) {
+						if (!instance->visible || !((1 << instance->base_type) & VS::INSTANCE_GEOMETRY_MASK) || !static_cast<InstanceGeometryData *>(instance->base_data)->can_cast_shadows || !(p_visible_layers & instance->layer_mask)) {
 							cull_count--;
 							SWAP(instance_shadow_cull_result[j], instance_shadow_cull_result[cull_count]);
 							j--;
@@ -2769,10 +2689,15 @@ bool VisualServerScene::_light_instance_update_shadow(Instance *p_instance, cons
 
 					int cull_count = _cull_convex_from_point(p_scenario, light_transform, cm, planes, instance_shadow_cull_result, MAX_INSTANCE_CULL, light->previous_room_id_hint, VS::INSTANCE_GEOMETRY_MASK);
 
+					// Do a secondary cull to remove casters that don't intersect with the camera frustum.
+					if (!light->is_shadow_update_full()) {
+						cull_count = light_culler->cull(cull_count, instance_shadow_cull_result);
+					}
+
 					Plane near_plane(xform.origin, -xform.basis.get_axis(2));
 					for (int j = 0; j < cull_count; j++) {
 						Instance *instance = instance_shadow_cull_result[j];
-						if (!instance->visible || !((1 << instance->base_type) & VS::INSTANCE_GEOMETRY_MASK) || !static_cast<InstanceGeometryData *>(instance->base_data)->can_cast_shadows) {
+						if (!instance->visible || !((1 << instance->base_type) & VS::INSTANCE_GEOMETRY_MASK) || !static_cast<InstanceGeometryData *>(instance->base_data)->can_cast_shadows || !(p_visible_layers & instance->layer_mask)) {
 							cull_count--;
 							SWAP(instance_shadow_cull_result[j], instance_shadow_cull_result[cull_count]);
 							j--;
@@ -2804,10 +2729,15 @@ bool VisualServerScene::_light_instance_update_shadow(Instance *p_instance, cons
 			Vector<Plane> planes = cm.get_projection_planes(light_transform);
 			int cull_count = _cull_convex_from_point(p_scenario, light_transform, cm, planes, instance_shadow_cull_result, MAX_INSTANCE_CULL, light->previous_room_id_hint, VS::INSTANCE_GEOMETRY_MASK);
 
+			// Do a secondary cull to remove casters that don't intersect with the camera frustum.
+			if (!light->is_shadow_update_full()) {
+				cull_count = light_culler->cull(cull_count, instance_shadow_cull_result);
+			}
+
 			Plane near_plane(light_transform.origin, -light_transform.basis.get_axis(2));
 			for (int j = 0; j < cull_count; j++) {
 				Instance *instance = instance_shadow_cull_result[j];
-				if (!instance->visible || !((1 << instance->base_type) & VS::INSTANCE_GEOMETRY_MASK) || !static_cast<InstanceGeometryData *>(instance->base_data)->can_cast_shadows) {
+				if (!instance->visible || !((1 << instance->base_type) & VS::INSTANCE_GEOMETRY_MASK) || !static_cast<InstanceGeometryData *>(instance->base_data)->can_cast_shadows || !(p_visible_layers & instance->layer_mask)) {
 					cull_count--;
 					SWAP(instance_shadow_cull_result[j], instance_shadow_cull_result[cull_count]);
 					j--;
@@ -2872,10 +2802,8 @@ void VisualServerScene::render_camera(RID p_camera, RID p_scenario, Size2 p_view
 		} break;
 	}
 
-	Transform camera_transform = _interpolation_data.interpolation_enabled ? camera->get_transform_interpolated() : camera->transform;
-
-	_prepare_scene(camera_transform, camera_matrix, ortho, camera->env, camera->visible_layers, p_scenario, p_shadow_atlas, RID(), camera->previous_room_id_hint);
-	_render_scene(camera_transform, camera_matrix, 0, ortho, camera->env, p_scenario, p_shadow_atlas, RID(), -1);
+	_prepare_scene(camera->transform, camera_matrix, ortho, camera->env, camera->visible_layers, p_scenario, p_shadow_atlas, RID(), camera->previous_room_id_hint);
+	_render_scene(camera->transform, camera_matrix, 0, ortho, camera->env, p_scenario, p_shadow_atlas, RID(), -1);
 #endif
 }
 
@@ -2964,6 +2892,9 @@ void VisualServerScene::render_camera(Ref<ARVRInterface> &p_interface, ARVRInter
 };
 
 void VisualServerScene::_prepare_scene(const Transform p_cam_transform, const CameraMatrix &p_cam_projection, bool p_cam_orthogonal, RID p_force_environment, uint32_t p_visible_layers, RID p_scenario, RID p_shadow_atlas, RID p_reflection_probe, int32_t &r_previous_room_id_hint) {
+	// Prepare the light - camera volume culling system.
+	light_culler->prepare_camera(p_cam_transform, p_cam_projection);
+
 	// Note, in stereo rendering:
 	// - p_cam_transform will be a transform in the middle of our two eyes
 	// - p_cam_projection is a wider frustrum that encompasses both eyes
@@ -3169,7 +3100,7 @@ void VisualServerScene::_prepare_scene(const Transform p_cam_transform, const Ca
 		VSG::scene_render->set_directional_shadow_count(directional_shadow_count);
 
 		for (int i = 0; i < directional_shadow_count; i++) {
-			_light_instance_update_shadow(lights_with_shadow[i], p_cam_transform, p_cam_projection, p_cam_orthogonal, p_shadow_atlas, scenario);
+			_light_instance_update_shadow(lights_with_shadow[i], p_cam_transform, p_cam_projection, p_cam_orthogonal, p_shadow_atlas, scenario, p_visible_layers);
 		}
 	}
 
@@ -3256,16 +3187,41 @@ void VisualServerScene::_prepare_scene(const Transform p_cam_transform, const Ca
 				}
 			}
 
-			if (light->shadow_dirty) {
-				light->last_version++;
-				light->shadow_dirty = false;
+			// We can detect whether multiple cameras are hitting this light, whether or not the shadow is dirty,
+			// so that we can turn off tighter caster culling.
+			light->detect_light_intersects_multiple_cameras(Engine::get_singleton()->get_frames_drawn());
+
+			if (light->is_shadow_dirty()) {
+				// Dirty shadows have no need to be drawn if
+				// the light volume doesn't intersect the camera frustum.
+
+				// Returns false if the entire light can be culled.
+				bool allow_redraw = light_culler->prepare_light(*ins);
+
+				// Directional lights aren't handled here, _light_instance_update_shadow is called from elsewhere.
+				// Checking for this in case this changes, as this is assumed.
+				DEV_CHECK_ONCE(VSG::storage->light_get_type(ins->base) != VS::LIGHT_DIRECTIONAL);
+
+				// Tighter caster culling to the camera frustum should work correctly with multiple viewports + cameras.
+				// The first camera will cull tightly, but if the light is present on more than 1 camera, the second will
+				// do a full render, and mark the light as non-dirty.
+				// There is however a cost to tighter shadow culling in this situation (2 shadow updates in 1 frame),
+				// so we should detect this and switch off tighter caster culling automatically.
+				// This is done in the logic for `decrement_shadow_dirty()`.
+				if (allow_redraw) {
+					light->last_version++;
+					light->decrement_shadow_dirty();
+				}
 			}
 
 			bool redraw = VSG::scene_render->shadow_atlas_update_light(p_shadow_atlas, light->instance, coverage, light->last_version);
 
 			if (redraw) {
 				//must redraw!
-				light->shadow_dirty = _light_instance_update_shadow(ins, p_cam_transform, p_cam_projection, p_cam_orthogonal, p_shadow_atlas, scenario);
+				if (_light_instance_update_shadow(ins, p_cam_transform, p_cam_projection, p_cam_orthogonal, p_shadow_atlas, scenario, p_visible_layers)) {
+					// If the light requests another update (animated material?)...
+					light->make_shadow_dirty();
+				}
 			}
 		}
 	}
@@ -4490,7 +4446,7 @@ void VisualServerScene::_update_dirty_instance(Instance *p_instance) {
 				//ability to cast shadows change, let lights now
 				for (List<Instance *>::Element *E = geom->lighting.front(); E; E = E->next()) {
 					InstanceLightData *light = static_cast<InstanceLightData *>(E->get()->base_data);
-					light->shadow_dirty = true;
+					light->make_shadow_dirty();
 				}
 
 				geom->can_cast_shadows = can_cast_shadows;
@@ -4529,8 +4485,6 @@ void VisualServerScene::update_dirty_instances() {
 bool VisualServerScene::free(RID p_rid) {
 	if (camera_owner.owns(p_rid)) {
 		Camera *camera = camera_owner.get(p_rid);
-		_interpolation_data.notify_free_camera(p_rid, *camera);
-
 		camera_owner.free(p_rid);
 		memdelete(camera);
 	} else if (scenario_owner.owns(p_rid)) {
@@ -4602,11 +4556,16 @@ VisualServerScene::VisualServerScene() {
 	probe_bake_thread.start(_gi_probe_bake_threads, this);
 	probe_bake_thread_exit = false;
 
+	light_culler = memnew(VisualServerLightCuller);
+
 	render_pass = 1;
 	singleton = this;
 	_use_bvh = GLOBAL_DEF("rendering/quality/spatial_partitioning/use_bvh", true);
 	GLOBAL_DEF("rendering/quality/spatial_partitioning/bvh_collision_margin", 0.1);
 	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/spatial_partitioning/bvh_collision_margin", PropertyInfo(Variant::REAL, "rendering/quality/spatial_partitioning/bvh_collision_margin", PROPERTY_HINT_RANGE, "0.0,2.0,0.01"));
+
+	light_culler->set_caster_culling_active(GLOBAL_DEF("rendering/quality/shadows/caster_culling", true));
+	light_culler->set_light_culling_active(GLOBAL_DEF("rendering/quality/shadows/light_culling", true));
 
 	_visual_server_callbacks = nullptr;
 }
@@ -4615,4 +4574,9 @@ VisualServerScene::~VisualServerScene() {
 	probe_bake_thread_exit = true;
 	probe_bake_sem.post();
 	probe_bake_thread.wait_to_finish();
+
+	if (light_culler) {
+		memdelete(light_culler);
+		light_culler = nullptr;
+	}
 }

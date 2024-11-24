@@ -54,6 +54,24 @@ private:
 	};
 	JSKeyEvent key_event;
 
+	bool ime_active = false;
+	bool ime_started = false;
+	String ime_text;
+	Vector2 ime_selection;
+
+	struct KeyEvent {
+		bool pressed = false;
+		bool echo = false;
+		bool raw = false;
+		uint32_t keycode = 0;
+		uint32_t physical_keycode = 0;
+		uint32_t unicode = 0;
+		int mod = 0;
+	};
+
+	Vector<KeyEvent> key_event_buffer;
+	int key_event_pos = 0;
+
 	VideoMode video_mode;
 	bool transparency_enabled;
 
@@ -74,11 +92,15 @@ private:
 	List<AudioDriverJavaScript *> audio_drivers;
 	VisualServer *visual_server;
 
+	bool tts;
 	bool swap_ok_cancel;
 	bool idb_available;
 	bool idb_needs_sync;
 	bool idb_is_syncing;
 	bool pwa_is_waiting;
+
+	Map<int, CharString> utterance_ids;
+	Array voices;
 
 	static void fullscreen_change_callback(int p_fullscreen);
 	static int mouse_button_callback(int p_pressed, int p_button, double p_x, double p_y, int p_modifiers);
@@ -90,6 +112,7 @@ private:
 	static void gamepad_callback(int p_index, int p_connected, const char *p_id, const char *p_guid);
 	static void input_text_callback(const char *p_text, int p_cursor);
 	void process_joypads();
+	void process_keys();
 
 	static void file_access_close_callback(const String &p_file, int p_flags);
 
@@ -100,6 +123,9 @@ private:
 	static void fs_sync_callback();
 	static void update_clipboard_callback(const char *p_text);
 	static void update_pwa_state_callback();
+	static void _js_utterance_callback(int p_event, int p_id, int p_pos);
+	static void ime_callback(int p_type, const char *p_text);
+	static void update_voices_callback(int p_size, const char **p_voice);
 
 protected:
 	void resume_audio();
@@ -120,12 +146,22 @@ public:
 	bool check_size_force_redraw();
 	bool pwa_needs_update() const { return pwa_is_waiting; }
 	Error pwa_update();
+	void force_fs_sync();
 
 	// Override return type to make writing static callbacks less tedious.
 	static OS_JavaScript *get_singleton();
 
+	virtual bool tts_is_speaking() const;
+	virtual bool tts_is_paused() const;
+	virtual Array tts_get_voices() const;
+
+	virtual void tts_speak(const String &p_text, const String &p_voice, int p_volume = 50, float p_pitch = 1.f, float p_rate = 1.f, int p_utterance_id = 0, bool p_interrupt = false);
+	virtual void tts_pause();
+	virtual void tts_resume();
+	virtual void tts_stop();
+
 	virtual bool has_virtual_keyboard() const;
-	virtual void show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect = Rect2(), bool p_multiline = false, int p_max_input_length = -1, int p_cursor_start = -1, int p_cursor_end = -1);
+	virtual void show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect = Rect2(), VirtualKeyboardType p_type = KEYBOARD_TYPE_DEFAULT, int p_max_input_length = -1, int p_cursor_start = -1, int p_cursor_end = -1);
 	virtual void hide_virtual_keyboard();
 
 	virtual bool get_swap_ok_cancel();
@@ -144,6 +180,12 @@ public:
 	virtual int get_screen_dpi(int p_screen = -1) const;
 	virtual float get_screen_scale(int p_screen = -1) const;
 	virtual float get_screen_max_scale() const;
+
+	virtual void set_ime_active(const bool p_active);
+	virtual void set_ime_position(const Point2 &p_pos);
+
+	virtual Point2 get_ime_selection() const;
+	virtual String get_ime_text() const;
 
 	virtual Point2 get_mouse_position() const;
 	virtual int get_mouse_button_state() const;
@@ -178,6 +220,7 @@ public:
 	virtual int get_process_id() const;
 	bool is_process_running(const ProcessID &p_pid) const;
 	int get_processor_count() const;
+	String get_unique_id() const;
 
 	virtual void alert(const String &p_alert, const String &p_title = "ALERT!");
 	virtual void set_window_title(const String &p_title);

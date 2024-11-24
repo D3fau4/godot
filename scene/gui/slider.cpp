@@ -46,6 +46,8 @@ Size2 Slider::get_minimum_size() const {
 }
 
 void Slider::_gui_input(Ref<InputEvent> p_event) {
+	ERR_FAIL_COND(p_event.is_null());
+
 	if (!editable) {
 		return;
 	}
@@ -239,6 +241,10 @@ void Slider::set_ticks_on_borders(bool _tob) {
 }
 
 void Slider::set_editable(bool p_editable) {
+	if (editable != p_editable) {
+		grab.active = false;
+	}
+
 	editable = p_editable;
 	update();
 }

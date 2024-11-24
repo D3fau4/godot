@@ -56,6 +56,21 @@ T *GDScriptParser::alloc_node() {
 	return t;
 }
 
+static String _lookup_autoload_path_for_identifier(const String &p_identifier) {
+	String autoload_path;
+	String autoload_setting_path = "autoload/" + p_identifier;
+	if (ProjectSettings::get_singleton()->has_setting(autoload_setting_path)) {
+		autoload_path = ProjectSettings::get_singleton()->get(autoload_setting_path);
+		if (autoload_path.begins_with("*")) {
+			autoload_path = autoload_path.right(1);
+		}
+		if (!autoload_path.begins_with("res://")) {
+			autoload_path = "res://" + autoload_path;
+		}
+	}
+	return autoload_path;
+}
+
 #ifdef DEBUG_ENABLED
 static String _find_function_name(const GDScriptParser::OperatorNode *p_call);
 #endif // DEBUG_ENABLED
@@ -1077,14 +1092,15 @@ GDScriptParser::Node *GDScriptParser::_parse_expression(Node *p_parent, bool p_s
 						}
 						expecting = DICT_EXPECT_COMMA;
 
-						if (key->type == GDScriptParser::Node::TYPE_CONSTANT) {
-							Variant const &keyName = static_cast<const GDScriptParser::ConstantNode *>(key)->value;
-
-							if (keys.has(keyName)) {
-								_set_error("Duplicate key found in Dictionary literal");
+						const Variant *key_value = _try_to_find_constant_value_for_expression(key);
+						if (key_value) {
+							if (keys.has(*key_value)) {
+								_set_error("Duplicate key \"" + String(*key_value) + "\" found in Dictionary literal",
+										key->line,
+										key->column);
 								return nullptr;
 							}
-							keys.insert(keyName);
+							keys.insert(*key_value);
 						}
 
 						DictionaryNode::Pair pair;
@@ -2128,6 +2144,49 @@ bool GDScriptParser::_reduce_export_var_type(Variant &p_value, int p_line) {
 	}
 	_set_error("Invalid export type. Only built-in and native resource types can be exported.", p_line);
 	return false;
+}
+
+const Variant *GDScriptParser::_try_to_find_constant_value_for_expression(const Node *p_expr) const {
+	if (p_expr->type == Node::TYPE_CONSTANT) {
+		return &(static_cast<const ConstantNode *>(p_expr)->value);
+	} else if (p_expr->type == Node::TYPE_IDENTIFIER) {
+		const StringName &name = static_cast<const IdentifierNode *>(p_expr)->name;
+		const Map<StringName, ClassNode::Constant>::Element *element =
+				current_class->constant_expressions.find(name);
+		if (element) {
+			Node *cn_exp = element->value().expression;
+			if (cn_exp->type == Node::TYPE_CONSTANT) {
+				return &(static_cast<ConstantNode *>(cn_exp)->value);
+			}
+		}
+	} else if (p_expr->type == Node::TYPE_OPERATOR) {
+		// Check if expression `p_expr` is a named enum (e.g. `State.IDLE`).
+		const OperatorNode *op_node = static_cast<const OperatorNode *>(p_expr);
+		if (op_node->op == GDScriptParser::OperatorNode::OP_INDEX_NAMED) {
+			const Vector<Node *> &op_args = op_node->arguments;
+			if (op_args.size() < 2) {
+				return nullptr; // Invalid expression.
+			}
+
+			if (op_args[0]->type != Node::TYPE_IDENTIFIER || op_args[1]->type != Node::TYPE_IDENTIFIER) {
+				return nullptr; // Not an enum expression.
+			}
+
+			const StringName &enum_name = static_cast<const IdentifierNode *>(op_args[0])->name;
+			const StringName &const_name = static_cast<const IdentifierNode *>(op_args[1])->name;
+			Map<StringName, ClassNode::Constant>::Element *element =
+					current_class->constant_expressions.find(enum_name);
+			if (element) {
+				Node *cn_exp = element->value().expression;
+				if (cn_exp->type == Node::TYPE_CONSTANT) {
+					const Dictionary &enum_dict = static_cast<ConstantNode *>(cn_exp)->value;
+					return enum_dict.getptr(const_name);
+				}
+			}
+		}
+	}
+
+	return nullptr;
 }
 
 bool GDScriptParser::_recover_from_completion() {
@@ -3723,7 +3782,7 @@ void GDScriptParser::_parse_class(ClassNode *p_class) {
 					return;
 				}
 
-				if (ClassDB::class_exists(p_class->name)) {
+				if (ClassDB::class_exists(p_class->name) || ClassDB::class_exists("_" + p_class->name.operator String())) {
 					_set_error("The class \"" + p_class->name + "\" shadows a native class.");
 					return;
 				}
@@ -4882,6 +4941,12 @@ void GDScriptParser::_parse_class(ClassNode *p_class) {
 				member.usages = 0;
 				member.rpc_mode = rpc_mode;
 
+				// GH-57496
+				if (ClassDB::class_exists(member.identifier) || ClassDB::class_exists("_" + member.identifier.operator String())) {
+					_set_error("Variable \"" + String(member.identifier) + "\" shadows a native class.");
+					return;
+				}
+
 				if (current_class->constant_expressions.has(member.identifier)) {
 					_set_error("A constant named \"" + String(member.identifier) + "\" already exists in this class (at line: " +
 							itos(current_class->constant_expressions[member.identifier].expression->line) + ").");
@@ -5140,6 +5205,12 @@ void GDScriptParser::_parse_class(ClassNode *p_class) {
 				StringName const_id = tokenizer->get_token_literal();
 				int line = tokenizer->get_token_line();
 
+				// GH-57496
+				if (ClassDB::class_exists(const_id) || ClassDB::class_exists("_" + const_id.operator String())) {
+					_set_error("Constant \"" + String(const_id) + "\" shadows a native class.");
+					return;
+				}
+
 				if (current_class->constant_expressions.has(const_id)) {
 					_set_error("Constant \"" + String(const_id) + "\" already exists in this class (at line " +
 							itos(current_class->constant_expressions[const_id].expression->line) + ").");
@@ -5215,6 +5286,12 @@ void GDScriptParser::_parse_class(ClassNode *p_class) {
 				tokenizer->advance();
 				if (tokenizer->is_token_literal(0, true)) {
 					enum_name = tokenizer->get_token_literal();
+
+					// GH-57496
+					if (ClassDB::class_exists(enum_name) || ClassDB::class_exists("_" + enum_name)) {
+						_set_error("Enumeration \"" + enum_name + "\" shadows a native class.");
+						return;
+					}
 
 					if (current_class->constant_expressions.has(enum_name)) {
 						_set_error("A constant named \"" + String(enum_name) + "\" already exists in this class (at line " +
@@ -5308,6 +5385,12 @@ void GDScriptParser::_parse_class(ClassNode *p_class) {
 						if (enum_name != "") {
 							enum_dict[const_id] = enum_value_expr->value;
 						} else {
+							// GH-57496
+							if (ClassDB::class_exists(const_id) || ClassDB::class_exists("_" + const_id.operator String())) {
+								_set_error("Constant \"" + String(const_id) + "\" shadows a native class.");
+								return;
+							}
+
 							if (current_class->constant_expressions.has(const_id)) {
 								_set_error("A constant named \"" + String(const_id) + "\" already exists in this class (at line " +
 										itos(current_class->constant_expressions[const_id].expression->line) + ").");
@@ -5457,29 +5540,14 @@ void GDScriptParser::_determine_inheritance(ClassNode *p_class, bool p_recursive
 				}
 				p = nullptr;
 			} else {
-				List<PropertyInfo> props;
-				ProjectSettings::get_singleton()->get_property_list(&props);
-				for (List<PropertyInfo>::Element *E = props.front(); E; E = E->next()) {
-					String s = E->get().name;
-					if (!s.begins_with("autoload/")) {
-						continue;
+				String autoload_path = _lookup_autoload_path_for_identifier(base);
+				if (!autoload_path.empty()) {
+					base_script = ResourceLoader::load(autoload_path);
+					if (!base_script.is_valid()) {
+						_set_error("Class '" + base + "' could not be fully loaded (script error or cyclic inheritance).", p_class->line);
+						return;
 					}
-					String name = s.get_slice("/", 1);
-					if (name == base) {
-						String singleton_path = ProjectSettings::get_singleton()->get(s);
-						if (singleton_path.begins_with("*")) {
-							singleton_path = singleton_path.right(1);
-						}
-						if (!singleton_path.begins_with("res://")) {
-							singleton_path = "res://" + singleton_path;
-						}
-						base_script = ResourceLoader::load(singleton_path);
-						if (!base_script.is_valid()) {
-							_set_error("Class '" + base + "' could not be fully loaded (script error or cyclic inheritance).", p_class->line);
-							return;
-						}
-						p = nullptr;
-					}
+					p = nullptr;
 				}
 			}
 
@@ -5829,28 +5897,10 @@ GDScriptParser::DataType GDScriptParser::_resolve_type(const DataType &p_source,
 				name_part++;
 				continue;
 			}
-			List<PropertyInfo> props;
-			ProjectSettings::get_singleton()->get_property_list(&props);
-			String singleton_path;
-			for (List<PropertyInfo>::Element *E = props.front(); E; E = E->next()) {
-				String s = E->get().name;
-				if (!s.begins_with("autoload/")) {
-					continue;
-				}
-				String name = s.get_slice("/", 1);
-				if (name == id) {
-					singleton_path = ProjectSettings::get_singleton()->get(s);
-					if (singleton_path.begins_with("*")) {
-						singleton_path = singleton_path.right(1);
-					}
-					if (!singleton_path.begins_with("res://")) {
-						singleton_path = "res://" + singleton_path;
-					}
-					break;
-				}
-			}
-			if (!singleton_path.empty()) {
-				Ref<Script> script = ResourceLoader::load(singleton_path);
+
+			String autoload_path = _lookup_autoload_path_for_identifier(id);
+			if (!autoload_path.empty()) {
+				Ref<Script> script = ResourceLoader::load(autoload_path);
 				Ref<GDScript> gds = script;
 				if (gds.is_valid()) {
 					if (!gds->is_valid()) {
@@ -7746,40 +7796,24 @@ GDScriptParser::DataType GDScriptParser::_reduce_identifier_type(const DataType 
 		}
 
 		// Non-tool singletons aren't loaded, check project settings
-		List<PropertyInfo> props;
-		ProjectSettings::get_singleton()->get_property_list(&props);
+		String autoload_path = _lookup_autoload_path_for_identifier(p_identifier);
+		if (!autoload_path.empty()) {
+			Ref<Script> singleton = ResourceLoader::load(autoload_path);
+			if (singleton.is_valid()) {
+				DataType result;
+				result.has_type = true;
+				result.is_constant = true;
+				result.script_type = singleton;
 
-		for (List<PropertyInfo>::Element *E = props.front(); E; E = E->next()) {
-			String s = E->get().name;
-			if (!s.begins_with("autoload/")) {
-				continue;
-			}
-			String name = s.get_slice("/", 1);
-			if (name == p_identifier) {
-				String script = ProjectSettings::get_singleton()->get(s);
-				if (script.begins_with("*")) {
-					script = script.right(1);
-				}
-				if (!script.begins_with("res://")) {
-					script = "res://" + script;
-				}
-				Ref<Script> singleton = ResourceLoader::load(script);
-				if (singleton.is_valid()) {
-					DataType result;
-					result.has_type = true;
-					result.is_constant = true;
-					result.script_type = singleton;
-
-					Ref<GDScript> gds = singleton;
-					if (gds.is_valid()) {
-						if (!gds->is_valid()) {
-							_set_error("Couldn't fully load the singleton script \"" + p_identifier + "\" (possible cyclic reference or parse error).", p_line);
-							return DataType();
-						}
-						result.kind = DataType::GDSCRIPT;
-					} else {
-						result.kind = DataType::SCRIPT;
+				Ref<GDScript> gds = singleton;
+				if (gds.is_valid()) {
+					if (!gds->is_valid()) {
+						_set_error("Couldn't fully load the singleton script \"" + p_identifier + "\" (possible cyclic reference or parse error).", p_line);
+						return DataType();
 					}
+					result.kind = DataType::GDSCRIPT;
+				} else {
+					result.kind = DataType::SCRIPT;
 				}
 			}
 		}

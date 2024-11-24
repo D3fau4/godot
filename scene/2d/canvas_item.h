@@ -191,21 +191,22 @@ private:
 
 	int light_mask;
 
-	bool first_draw;
-	bool visible;
-	bool pending_update;
-	bool toplevel;
-	bool drawing;
-	bool block_transform_notify;
-	bool behind;
-	bool use_parent_material;
-	bool notify_local_transform;
-	bool notify_transform;
+	bool first_draw : 1;
+	bool visible : 1;
+	bool pending_update : 1;
+	bool toplevel : 1;
+	bool drawing : 1;
+	bool block_transform_notify : 1;
+	bool behind : 1;
+	bool use_parent_material : 1;
+	bool notify_local_transform : 1;
+	bool notify_transform : 1;
+	bool font_sdf_selected : 1;
+	mutable bool global_invalid : 1;
 
 	Ref<Material> material;
 
 	mutable Transform2D global_transform;
-	mutable bool global_invalid;
 
 	void _toplevel_raise_self();
 	void _toplevel_visibility_changed(bool p_visible);
@@ -218,6 +219,7 @@ private:
 	void _exit_canvas();
 
 	void _notify_transform(CanvasItem *p_node);
+	virtual void _physics_interpolated_changed();
 
 	void _set_on_top(bool p_on_top) { set_draw_behind_parent(!p_on_top); }
 	bool _is_on_top() const { return !is_draw_behind_parent_enabled(); }
@@ -236,9 +238,15 @@ protected:
 	}
 
 	void item_rect_changed(bool p_size_changed = true);
+	void set_canvas_item_use_identity_transform(bool p_enable);
+	Transform2D get_global_transform_const() const;
 
 	void _notification(int p_what);
 	static void _bind_methods();
+
+#ifdef DEV_ENABLED
+	virtual void _name_changed_notify();
+#endif
 
 public:
 	enum {
@@ -288,6 +296,8 @@ public:
 	virtual Transform2D _edit_get_transform() const;
 #endif
 
+	void update_draw_order();
+
 	/* VISIBILITY */
 
 	void set_visible(bool p_visible);
@@ -328,6 +338,7 @@ public:
 	void draw_mesh(const Ref<Mesh> &p_mesh, const Ref<Texture> &p_texture, const Ref<Texture> &p_normal_map, const Transform2D &p_transform = Transform2D(), const Color &p_modulate = Color(1, 1, 1));
 	void draw_multimesh(const Ref<MultiMesh> &p_multimesh, const Ref<Texture> &p_texture, const Ref<Texture> &p_normal_map);
 
+	void select_font(const Ref<Font> &p_font);
 	void draw_string(const Ref<Font> &p_font, const Point2 &p_pos, const String &p_text, const Color &p_modulate = Color(1, 1, 1), int p_clip_w = -1);
 	float draw_char(const Ref<Font> &p_font, const Point2 &p_pos, const String &p_char, const String &p_next = "", const Color &p_modulate = Color(1, 1, 1));
 

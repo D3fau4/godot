@@ -62,6 +62,7 @@ enum PropertyHint {
 	PROPERTY_HINT_ENUM, ///< hint_text= "val1,val2,val3,etc"
 	PROPERTY_HINT_EXP_EASING, /// exponential easing function (Math::ease) use "attenuation" hint string to revert (flip h), "full" to also include in/out. (ie: "attenuation,inout")
 	PROPERTY_HINT_LENGTH, ///< hint_text= "length" (as integer)
+	PROPERTY_HINT_LINK,
 	PROPERTY_HINT_SPRITE_FRAME, // FIXME: Obsolete: drop whenever we can break compat. Keeping now for GDNative compat.
 	PROPERTY_HINT_KEY_ACCEL, ///< hint_text= "length" (as integer)
 	PROPERTY_HINT_FLAGS, ///< hint_text= "flag1,flag2,etc" (as bit flags)
@@ -96,6 +97,7 @@ enum PropertyHint {
 	PROPERTY_HINT_NODE_PATH_VALID_TYPES,
 	PROPERTY_HINT_SAVE_FILE, ///< a file path must be passed, hint_text (optionally) is a filter "*.png,*.wav,*.doc,". This opens a save dialog
 	PROPERTY_HINT_ENUM_SUGGESTION, ///< hint_text= "val1,val2,val3,etc"
+	PROPERTY_HINT_LOCALE_ID,
 	PROPERTY_HINT_MAX,
 	// When updating PropertyHint, also sync the hardcoded list in VisualScriptEditorVariableEdit
 };
@@ -463,7 +465,10 @@ private:
 			int reference_count;
 			Connection conn;
 			List<Connection>::Element *cE;
-			Slot() { reference_count = 0; }
+			Slot() {
+				reference_count = 0;
+				cE = nullptr;
+			}
 		};
 
 		MethodInfo user;

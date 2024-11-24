@@ -51,6 +51,7 @@
 #include "scene/3d/ray_cast.h"
 #include "scene/3d/reflection_probe.h"
 #include "scene/3d/room.h"
+#include "scene/3d/shape_cast.h"
 #include "scene/3d/soft_body.h"
 #include "scene/3d/spring_arm.h"
 #include "scene/3d/sprite_3d.h"
@@ -585,7 +586,10 @@ bool EditorSpatialGizmo::intersect_ray(Camera *p_camera, const Point2 &p_point, 
 
 		for (int i = 0; i < handles.size(); i++) {
 			Vector3 hpos = t.xform(handles[i]);
-			Vector2 p = p_camera->unproject_position(hpos);
+			Vector2 p;
+			if (!p_camera->safe_unproject_position(hpos, p)) {
+				continue;
+			}
 
 			if (p.distance_to(p_point) < HANDLE_HALF_SIZE) {
 				real_t dp = p_camera->get_transform().origin.distance_to(hpos);
@@ -664,8 +668,12 @@ bool EditorSpatialGizmo::intersect_ray(Camera *p_camera, const Point2 &p_point, 
 			Vector3 a = t.xform(vptr[i * 2 + 0]);
 			Vector3 b = t.xform(vptr[i * 2 + 1]);
 			Vector2 s[2];
-			s[0] = p_camera->unproject_position(a);
-			s[1] = p_camera->unproject_position(b);
+			if (!p_camera->safe_unproject_position(a, s[0])) {
+				continue;
+			}
+			if (!p_camera->safe_unproject_position(b, s[1])) {
+				continue;
+			}
 
 			Vector2 p = Geometry::get_closest_point_to_segment_2d(p_point, s);
 
@@ -1449,6 +1457,7 @@ void CameraSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
 #undef ADD_QUAD
 
 	p_gizmo->add_lines(lines, material);
+	p_gizmo->add_collision_segments(lines);
 	p_gizmo->add_handles(handles, get_material("handles"));
 
 	ClippedCamera *clipcam = Object::cast_to<ClippedCamera>(camera);
@@ -1532,31 +1541,31 @@ void MeshInstanceSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
 }
 
 /////
-Sprite3DSpatialGizmoPlugin::Sprite3DSpatialGizmoPlugin() {
+SpriteBase3DSpatialGizmoPlugin::SpriteBase3DSpatialGizmoPlugin() {
 }
 
-bool Sprite3DSpatialGizmoPlugin::has_gizmo(Spatial *p_spatial) {
-	return Object::cast_to<Sprite3D>(p_spatial) != nullptr;
+bool SpriteBase3DSpatialGizmoPlugin::has_gizmo(Spatial *p_spatial) {
+	return Object::cast_to<SpriteBase3D>(p_spatial) != nullptr;
 }
 
-String Sprite3DSpatialGizmoPlugin::get_name() const {
-	return "Sprite3D";
+String SpriteBase3DSpatialGizmoPlugin::get_name() const {
+	return "SpriteBase3D";
 }
 
-int Sprite3DSpatialGizmoPlugin::get_priority() const {
+int SpriteBase3DSpatialGizmoPlugin::get_priority() const {
 	return -1;
 }
 
-bool Sprite3DSpatialGizmoPlugin::can_be_hidden() const {
+bool SpriteBase3DSpatialGizmoPlugin::can_be_hidden() const {
 	return false;
 }
 
-void Sprite3DSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
-	Sprite3D *sprite = Object::cast_to<Sprite3D>(p_gizmo->get_spatial_node());
+void SpriteBase3DSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
+	SpriteBase3D *sprite_base = Object::cast_to<SpriteBase3D>(p_gizmo->get_spatial_node());
 
 	p_gizmo->clear();
 
-	Ref<TriangleMesh> tm = sprite->generate_triangle_mesh();
+	Ref<TriangleMesh> tm = sprite_base->generate_triangle_mesh();
 	if (tm.is_valid()) {
 		p_gizmo->add_collision_triangles(tm);
 	}
@@ -1642,11 +1651,11 @@ Position3DSpatialGizmoPlugin::Position3DSpatialGizmoPlugin() {
 	cursor_colors.push_back(color_z.linear_interpolate(Color(0, 0, 0), 0.75));
 	cursor_colors.push_back(color_z.linear_interpolate(Color(0, 0, 0), 0.75));
 
-	Ref<SpatialMaterial> mat = memnew(SpatialMaterial);
-	mat->set_flag(SpatialMaterial::FLAG_UNSHADED, true);
-	mat->set_flag(SpatialMaterial::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
-	mat->set_flag(SpatialMaterial::FLAG_SRGB_VERTEX_COLOR, true);
-	mat->set_feature(SpatialMaterial::FEATURE_TRANSPARENT, true);
+	Ref<Material3D> mat = memnew(SpatialMaterial);
+	mat->set_flag(Material3D::FLAG_UNSHADED, true);
+	mat->set_flag(Material3D::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
+	mat->set_flag(Material3D::FLAG_SRGB_VERTEX_COLOR, true);
+	mat->set_feature(Material3D::FEATURE_TRANSPARENT, true);
 	mat->set_line_width(3);
 	Array d;
 	d.resize(VS::ARRAY_MAX);
@@ -1988,7 +1997,7 @@ void RayCastSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
 
 	p_gizmo->clear();
 
-	const Ref<SpatialMaterial> material = raycast->is_enabled() ? raycast->get_debug_material() : get_material("shape_material_disabled");
+	const Ref<Material3D> material = raycast->is_enabled() ? raycast->get_debug_material() : get_material("shape_material_disabled");
 
 	p_gizmo->add_lines(raycast->get_debug_line_vertices(), material);
 
@@ -1997,6 +2006,44 @@ void RayCastSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
 	}
 
 	p_gizmo->add_collision_segments(raycast->get_debug_line_vertices());
+}
+
+/////
+
+ShapeCastGizmoPlugin::ShapeCastGizmoPlugin() {
+	const Color gizmo_color = EDITOR_GET("editors/3d_gizmos/gizmo_colors/shape");
+	create_material("shape_material", gizmo_color);
+	const float gizmo_value = gizmo_color.get_v();
+	const Color gizmo_color_disabled = Color(gizmo_value, gizmo_value, gizmo_value, 0.65);
+	create_material("shape_material_disabled", gizmo_color_disabled);
+}
+
+bool ShapeCastGizmoPlugin::has_gizmo(Spatial *p_spatial) {
+	return Object::cast_to<ShapeCast>(p_spatial) != nullptr;
+}
+
+String ShapeCastGizmoPlugin::get_name() const {
+	return "ShapeCast";
+}
+
+int ShapeCastGizmoPlugin::get_priority() const {
+	return -1;
+}
+
+void ShapeCastGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
+	ShapeCast *shapecast = Object::cast_to<ShapeCast>(p_gizmo->get_spatial_node());
+
+	p_gizmo->clear();
+
+	const Ref<Material3D> material = shapecast->is_enabled() ? shapecast->get_debug_material() : get_material("shape_material_disabled");
+
+	p_gizmo->add_lines(shapecast->get_debug_line_vertices(), material);
+
+	if (shapecast->get_shape().is_valid()) {
+		p_gizmo->add_lines(shapecast->get_debug_shape_vertices(), material);
+	}
+
+	p_gizmo->add_collision_segments(shapecast->get_debug_line_vertices());
 }
 
 /////
@@ -2011,7 +2058,7 @@ void SpringArmSpatialGizmoPlugin::redraw(EditorSpatialGizmo *p_gizmo) {
 	lines.push_back(Vector3());
 	lines.push_back(Vector3(0, 0, 1.0) * spring_arm->get_length());
 
-	Ref<SpatialMaterial> material = get_material("shape_material", p_gizmo);
+	Ref<Material3D> material = get_material("shape_material", p_gizmo);
 
 	p_gizmo->add_lines(lines, material);
 	p_gizmo->add_collision_segments(lines);

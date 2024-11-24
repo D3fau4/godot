@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="Image" inherits="Resource" version="3.5" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="Image" inherits="Resource" version="3.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		Image datatype.
 	</brief_description>
@@ -385,6 +385,13 @@
 				img.unlock()
 				img.set_pixel(x, y, color) # Does not have an effect
 				[/codeblock]
+				[b]Note:[/b] Some image methods can leave the image unlocked, making subsequent [method set_pixel] calls fail unless the image is locked again. Methods potentially unlocking the image: [method blend_rect], [method blend_rect_mask], [method blit_rect_mask], [method convert], [method fill], [method fill_rect], [method get_used_rect], and [method rgbe_to_srgb].
+				[codeblock]
+				img.lock()
+				img.set_pixel(x, y, color) # Works
+				img.fill(color) # Unlocks the image
+				img.set_pixel(x, y, color) # Does not have an effect
+				[/codeblock]
 			</description>
 		</method>
 		<method name="set_pixelv">
@@ -399,6 +406,13 @@
 				img.lock()
 				img.set_pixelv(Vector2(x, y), color) # Works
 				img.unlock()
+				img.set_pixelv(Vector2(x, y), color) # Does not have an effect
+				[/codeblock]
+				[b]Note:[/b] Some image methods can leave the image unlocked, making subsequent [method set_pixelv] calls fail unless the image is locked again. Methods potentially unlocking the image: [method blend_rect], [method blend_rect_mask], [method blit_rect_mask], [method convert], [method fill], [method fill_rect], [method get_used_rect], and [method rgbe_to_srgb].
+				[codeblock]
+				img.lock()
+				img.set_pixelv(Vector2(x, y), color) # Works
+				img.fill(dcolor) # Unlocks the image
 				img.set_pixelv(Vector2(x, y), color) # Does not have an effect
 				[/codeblock]
 			</description>
@@ -601,6 +615,12 @@
 		</constant>
 		<constant name="COMPRESS_ETC2" value="4" enum="CompressMode">
 			Use ETC2 compression.
+		</constant>
+		<constant name="COMPRESS_BPTC" value="5" enum="CompressMode">
+			Use BPTC compression.
+		</constant>
+		<constant name="COMPRESS_MAX" value="6" enum="CompressMode">
+			Represents the size of the [enum CompressMode] enum.
 		</constant>
 		<constant name="COMPRESS_SOURCE_GENERIC" value="0" enum="CompressSource">
 			Source texture (before compression) is a regular texture. Default for all textures.

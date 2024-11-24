@@ -55,6 +55,8 @@
 #include "script_create_dialog.h"
 
 class EditorNode;
+class SceneCreateDialog;
+class DirectoryCreateDialog;
 
 class FileSystemDock : public VBoxContainer {
 	GDCLASS(FileSystemDock, VBoxContainer);
@@ -152,11 +154,9 @@ private:
 	LineEdit *rename_dialog_text;
 	ConfirmationDialog *duplicate_dialog;
 	LineEdit *duplicate_dialog_text;
-	ConfirmationDialog *make_dir_dialog;
-	LineEdit *make_dir_dialog_text;
-	ConfirmationDialog *make_scene_dialog;
-	LineEdit *make_scene_dialog_text;
+	DirectoryCreateDialog *make_dir_dialog = nullptr;
 	ConfirmationDialog *overwrite_dialog;
+	SceneCreateDialog *make_scene_dialog = nullptr;
 	ScriptCreateDialog *make_script_dialog;
 	CreateDialog *new_resource_dialog;
 
@@ -229,7 +229,6 @@ private:
 	void _folder_removed(String p_folder);
 
 	void _resource_created() const;
-	void _make_dir_confirm();
 	void _make_scene_confirm();
 	void _rename_operation_confirm();
 	void _duplicate_operation_confirm();

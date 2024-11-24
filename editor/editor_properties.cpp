@@ -32,6 +32,7 @@
 
 #include "editor/editor_resource_preview.h"
 #include "editor/filesystem_dock.h"
+#include "editor/project_settings_editor.h"
 #include "editor_node.h"
 #include "editor_properties_array_dict.h"
 #include "editor_scale.h"
@@ -318,6 +319,67 @@ EditorPropertyTextEnum::EditorPropertyTextEnum() {
 	add_focusable(custom_value_edit);
 	add_focusable(accept_button);
 	add_focusable(cancel_button);
+}
+
+//////////////////// LOCALE ////////////////////////
+
+void EditorPropertyLocale::_locale_selected(const String &p_locale) {
+	emit_changed(get_edited_property(), p_locale);
+	update_property();
+}
+
+void EditorPropertyLocale::_locale_pressed() {
+	if (!dialog) {
+		dialog = memnew(EditorLocaleDialog);
+		dialog->connect("locale_selected", this, "_locale_selected");
+		add_child(dialog);
+	}
+
+	String locale_code = get_edited_object()->get(get_edited_property());
+	dialog->set_locale(locale_code);
+	dialog->popup_locale_dialog();
+}
+
+void EditorPropertyLocale::update_property() {
+	String locale_code = get_edited_object()->get(get_edited_property());
+	locale->set_text(locale_code);
+	locale->set_tooltip(locale_code);
+}
+
+void EditorPropertyLocale::setup(const String &p_hint_text) {
+}
+
+void EditorPropertyLocale::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
+		locale_edit->set_icon(get_icon("Translation", "EditorIcons"));
+	}
+}
+
+void EditorPropertyLocale::_locale_focus_exited() {
+	_locale_selected(locale->get_text());
+}
+
+void EditorPropertyLocale::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("_locale_selected"), &EditorPropertyLocale::_locale_selected);
+	ClassDB::bind_method(D_METHOD("_locale_pressed"), &EditorPropertyLocale::_locale_pressed);
+	ClassDB::bind_method(D_METHOD("_locale_focus_exited"), &EditorPropertyLocale::_locale_focus_exited);
+}
+
+EditorPropertyLocale::EditorPropertyLocale() {
+	HBoxContainer *locale_hb = memnew(HBoxContainer);
+	add_child(locale_hb);
+	locale = memnew(LineEdit);
+	locale_hb->add_child(locale);
+	locale->connect("text_entered", this, "_locale_selected");
+	locale->connect("focus_exited", this, "_locale_focus_exited");
+	locale->set_h_size_flags(SIZE_EXPAND_FILL);
+
+	locale_edit = memnew(Button);
+	locale_edit->set_clip_text(true);
+	locale_hb->add_child(locale_edit);
+	add_focusable(locale);
+	dialog = nullptr;
+	locale_edit->connect("pressed", this, "_locale_pressed");
 }
 
 ///////////////////// PATH /////////////////////////
@@ -628,14 +690,12 @@ EditorPropertyEnum::EditorPropertyEnum() {
 
 ///////////////////// FLAGS /////////////////////////
 
-void EditorPropertyFlags::_flag_toggled() {
-	uint32_t value = 0;
-	for (int i = 0; i < flags.size(); i++) {
-		if (flags[i]->is_pressed()) {
-			uint32_t val = 1;
-			val <<= flag_indices[i];
-			value |= val;
-		}
+void EditorPropertyFlags::_flag_toggled(int p_index) {
+	uint32_t value = get_edited_object()->get(get_edited_property());
+	if (flags[p_index]->is_pressed()) {
+		value |= flag_values[p_index];
+	} else {
+		value &= ~flag_values[p_index];
 	}
 
 	emit_changed(get_edited_property(), value);
@@ -645,13 +705,7 @@ void EditorPropertyFlags::update_property() {
 	uint32_t value = get_edited_object()->get(get_edited_property());
 
 	for (int i = 0; i < flags.size(); i++) {
-		uint32_t val = 1;
-		val <<= flag_indices[i];
-		if (value & val) {
-			flags[i]->set_pressed(true);
-		} else {
-			flags[i]->set_pressed(false);
-		}
+		flags[i]->set_pressed((value & flag_values[i]) == flag_values[i]);
 	}
 }
 
@@ -659,17 +713,24 @@ void EditorPropertyFlags::setup(const Vector<String> &p_options) {
 	ERR_FAIL_COND(flags.size());
 
 	bool first = true;
+	uint32_t current_val;
 	for (int i = 0; i < p_options.size(); i++) {
 		String option = p_options[i].strip_edges();
 		if (option != "") {
 			CheckBox *cb = memnew(CheckBox);
 			cb->set_text(option);
 			cb->set_clip_text(true);
-			cb->connect("pressed", this, "_flag_toggled");
+			cb->connect("pressed", this, "_flag_toggled", varray(i));
 			add_focusable(cb);
 			vbox->add_child(cb);
 			flags.push_back(cb);
-			flag_indices.push_back(i);
+			Vector<String> text_split = p_options[i].split(":");
+			if (text_split.size() != 1) {
+				current_val = text_split[1].to_int();
+			} else {
+				current_val = 1 << i;
+			}
+			flag_values.push_back(current_val);
 			if (first) {
 				set_label_reference(cb);
 				first = false;
@@ -735,53 +796,72 @@ public:
 		return String();
 	}
 
+	void _update_hovered(const Vector2 &p_position) {
+		bool expand_was_hovered = expand_hovered;
+		expand_hovered = expand_rect.has_point(p_position);
+		if (expand_hovered != expand_was_hovered) {
+			update();
+		}
+
+		if (!expand_hovered) {
+			for (int i = 0; i < flag_rects.size(); i++) {
+				if (flag_rects[i].has_point(p_position)) {
+					// Used to highlight the hovered flag in the layers grid.
+					hovered_index = i;
+					update();
+					return;
+				}
+			}
+		}
+
+		// Remove highlight when no square is hovered.
+		if (hovered_index != -1) {
+			hovered_index = -1;
+			update();
+		}
+	}
+
+	void _on_hover_exit() {
+		if (expand_hovered) {
+			expand_hovered = false;
+			update();
+		}
+		if (hovered_index != -1) {
+			hovered_index = -1;
+			update();
+		}
+	}
+
+	void _update_flag() {
+		if (hovered_index >= 0) {
+			// Toggle the flag.
+			// We base our choice on the hovered flag, so that it always matches the hovered flag.
+			if (value & (1 << hovered_index)) {
+				value &= ~(1 << hovered_index);
+			} else {
+				value |= (1 << hovered_index);
+			}
+
+			emit_signal("flag_changed", value);
+			update();
+		} else if (expand_hovered) {
+			expanded = !expanded;
+			minimum_size_changed();
+			update();
+		}
+	}
+
 	void _gui_input(const Ref<InputEvent> &p_ev) {
 		const Ref<InputEventMouseMotion> mm = p_ev;
 		if (mm.is_valid()) {
-			bool expand_was_hovered = expand_hovered;
-			expand_hovered = expand_rect.has_point(mm->get_position());
-			if (expand_hovered != expand_was_hovered) {
-				update();
-			}
-
-			if (!expand_hovered) {
-				for (int i = 0; i < flag_rects.size(); i++) {
-					if (flag_rects[i].has_point(mm->get_position())) {
-						// Used to highlight the hovered flag in the layers grid.
-						hovered_index = i;
-						update();
-						return;
-					}
-				}
-			}
-
-			// Remove highlight when no square is hovered.
-			if (hovered_index != -1) {
-				hovered_index = -1;
-				update();
-			}
-
+			_update_hovered(mm->get_position());
 			return;
 		}
 
 		const Ref<InputEventMouseButton> mb = p_ev;
 		if (mb.is_valid() && mb->get_button_index() == BUTTON_LEFT && mb->is_pressed()) {
-			if (hovered_index >= 0) {
-				// Toggle the flag.
-				// We base our choice on the hovered flag, so that it always matches the hovered flag.
-				if (value & (1 << hovered_index)) {
-					value &= ~(1 << hovered_index);
-				} else {
-					value |= (1 << hovered_index);
-				}
-
-				emit_signal("flag_changed", value);
-				update();
-			} else if (expand_hovered) {
-				expanded = !expanded;
-				minimum_size_changed();
-				update();
-			}
+			_update_hovered(mb->get_position());
+			_update_flag();
 		}
 	}
 
@@ -913,14 +993,7 @@ public:
 			} break;
 
 			case NOTIFICATION_MOUSE_EXIT: {
-				if (expand_hovered) {
-					expand_hovered = false;
-					update();
-				}
-				if (hovered_index != -1) {
-					hovered_index = -1;
-					update();
-				}
+				_on_hover_exit();
 			} break;
 
 			default:
@@ -952,7 +1025,6 @@ void EditorPropertyLayers::update_property() {
 void EditorPropertyLayers::setup(LayerType p_layer_type) {
 	layer_type = p_layer_type;
 
-	String basename;
 	int layer_group_size = 0;
 	int layer_count = 0;
 	switch (p_layer_type) {
@@ -996,13 +1068,8 @@ void EditorPropertyLayers::setup(LayerType p_layer_type) {
 	Vector<String> names;
 	Vector<String> tooltips;
 	for (int i = 0; i < layer_count; i++) {
-		String name;
-
-		if (ProjectSettings::get_singleton()->has_setting(basename + "/layer_" + itos(i + 1))) {
-			name = ProjectSettings::get_singleton()->get(basename + "/layer_" + itos(i + 1));
-		}
-
-		if (name == "") {
+		String name = _get_layer_name(i);
+		if (name.empty()) {
 			name = TTR("Layer") + " " + itos(i + 1);
 		}
 
@@ -1018,17 +1085,24 @@ void EditorPropertyLayers::setup(LayerType p_layer_type) {
 
 void EditorPropertyLayers::_button_pressed() {
 	int layer_count = grid->layer_count;
-	int layer_group_size = grid->layer_group_size;
 
 	layers->clear();
 	for (int i = 0; i < layer_count; i++) {
-		if ((i != 0) && ((i % layer_group_size) == 0)) {
-			layers->add_separator();
+		const String name = _get_layer_name(i);
+		if (name.empty()) {
+			continue;
 		}
-		layers->add_check_item(grid->names[i], i);
+		layers->add_check_item(name, i);
 		int idx = layers->get_item_index(i);
 		layers->set_item_checked(idx, grid->value & (1 << i));
 	}
+
+	if (layers->get_item_count() == 0) {
+		layers->add_item(TTR("No Named Layers"));
+		layers->set_item_disabled(0, true);
+	}
+	layers->add_separator();
+	layers->add_icon_item(get_icon("Edit", "EditorIcons"), TTR("Edit Layer Names"), grid->layer_count);
 
 	Rect2 gp = button->get_global_rect();
 	layers->set_as_minsize();
@@ -1038,18 +1112,31 @@ void EditorPropertyLayers::_button_pressed() {
 }
 
 void EditorPropertyLayers::_menu_pressed(int p_menu) {
-	if (grid->value & (1 << p_menu)) {
-		grid->value &= ~(1 << p_menu);
+	if (p_menu == grid->layer_count) {
+		ProjectSettingsEditor::get_singleton()->popup_project_settings();
+		ProjectSettingsEditor::get_singleton()->set_general_page(basename);
 	} else {
-		grid->value |= (1 << p_menu);
+		if (grid->value & (1 << p_menu)) {
+			grid->value &= ~(1 << p_menu);
+		} else {
+			grid->value |= (1 << p_menu);
+		}
+		grid->update();
+		layers->set_item_checked(layers->get_item_index(p_menu), grid->value & (1 << p_menu));
+		_grid_changed(grid->value);
 	}
-	grid->update();
-	layers->set_item_checked(layers->get_item_index(p_menu), grid->value & (1 << p_menu));
-	_grid_changed(grid->value);
 }
 
 void EditorPropertyLayers::_refresh_names() {
 	setup(layer_type);
+}
+
+String EditorPropertyLayers::_get_layer_name(int p_index) const {
+	const String property_name = basename + vformat("/layer_%d", p_index + 1);
+	if (ProjectSettings::get_singleton()->has_setting(property_name)) {
+		return ProjectSettings::get_singleton()->get(property_name);
+	}
+	return String();
 }
 
 void EditorPropertyLayers::_bind_methods() {
@@ -1431,10 +1518,22 @@ void EditorPropertyVector2::_value_changed(double val, const String &p_name) {
 		return;
 	}
 
+	if (linked->is_pressed()) {
+		setting = true;
+		if (p_name == "x") {
+			spin[1]->set_value(spin[0]->get_value() * ratio_yx);
+		}
+
+		if (p_name == "y") {
+			spin[0]->set_value(spin[1]->get_value() * ratio_xy);
+		}
+		setting = false;
+	}
+
 	Vector2 v2;
 	v2.x = spin[0]->get_value();
 	v2.y = spin[1]->get_value();
-	emit_changed(get_edited_property(), v2, p_name);
+	emit_changed(get_edited_property(), v2, linked->is_pressed() ? "" : p_name);
 }
 
 void EditorPropertyVector2::update_property() {
@@ -1443,24 +1542,46 @@ void EditorPropertyVector2::update_property() {
 	spin[0]->set_value(val.x);
 	spin[1]->set_value(val.y);
 	setting = false;
+	_update_ratio();
+}
+
+void EditorPropertyVector2::_update_ratio() {
+	linked->set_modulate(Color(1, 1, 1, linked->is_pressed() ? 1.0 : 0.5));
+
+	if (spin[0]->get_value() != 0 && spin[1]->get_value() != 0) {
+		ratio_xy = spin[0]->get_value() / spin[1]->get_value();
+		ratio_yx = spin[1]->get_value() / spin[0]->get_value();
+	} else {
+		ratio_xy = 1.0;
+		ratio_yx = 1.0;
+	}
 }
 
 void EditorPropertyVector2::_notification(int p_what) {
-	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
-		Color base = get_color("accent_color", "Editor");
-		for (int i = 0; i < 2; i++) {
-			Color c = base;
-			c.set_hsv(float(i) / 3.0 + 0.05, c.get_s() * 0.75, c.get_v());
-			spin[i]->set_custom_label_color(true, c);
-		}
+	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE:
+		case NOTIFICATION_THEME_CHANGED: {
+			Ref<Texture> normal_icon = get_icon("Unlinked", "EditorIcons");
+			linked->set_custom_minimum_size(Vector2(normal_icon->get_width(), 0));
+			linked->set_normal_texture(normal_icon);
+			linked->set_pressed_texture(get_icon("Instance", "EditorIcons"));
+
+			Color base = get_color("accent_color", "Editor");
+			for (int i = 0; i < 2; i++) {
+				Color c = base;
+				c.set_hsv(float(i) / 3.0 + 0.05, c.get_s() * 0.75, c.get_v());
+				spin[i]->set_custom_label_color(true, c);
+			}
+		} break;
 	}
 }
 
 void EditorPropertyVector2::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("_update_ratio"), &EditorPropertyVector2::_update_ratio);
 	ClassDB::bind_method(D_METHOD("_value_changed"), &EditorPropertyVector2::_value_changed);
 }
 
-void EditorPropertyVector2::setup(double p_min, double p_max, double p_step, bool p_no_slider) {
+void EditorPropertyVector2::setup(double p_min, double p_max, double p_step, bool p_no_slider, bool p_link) {
 	for (int i = 0; i < 2; i++) {
 		spin[i]->set_min(p_min);
 		spin[i]->set_max(p_max);
@@ -1469,21 +1590,31 @@ void EditorPropertyVector2::setup(double p_min, double p_max, double p_step, boo
 		spin[i]->set_allow_greater(true);
 		spin[i]->set_allow_lesser(true);
 	}
+
+	if (!p_link) {
+		linked->hide();
+	} else {
+		linked->set_pressed(true);
+	}
 }
 
 EditorPropertyVector2::EditorPropertyVector2() {
 	bool horizontal = EDITOR_GET("interface/inspector/horizontal_vector2_editing");
 
+	HBoxContainer *hb = memnew(HBoxContainer);
+	hb->set_h_size_flags(SIZE_EXPAND_FILL);
+
 	BoxContainer *bc;
 
 	if (horizontal) {
 		bc = memnew(HBoxContainer);
-		add_child(bc);
-		set_bottom_editor(bc);
+		hb->add_child(bc);
+		set_bottom_editor(hb);
 	} else {
 		bc = memnew(VBoxContainer);
-		add_child(bc);
+		hb->add_child(bc);
 	}
+	bc->set_h_size_flags(SIZE_EXPAND_FILL);
 
 	static const char *desc[2] = { "x", "y" };
 	for (int i = 0; i < 2; i++) {
@@ -1498,6 +1629,14 @@ EditorPropertyVector2::EditorPropertyVector2() {
 		}
 	}
 
+	linked = memnew(TextureButton);
+	linked->set_toggle_mode(true);
+	linked->set_expand(true);
+	linked->set_stretch_mode(TextureButton::STRETCH_KEEP_CENTERED);
+	linked->connect("pressed", this, "_update_ratio");
+	hb->add_child(linked);
+
+	add_child(hb);
 	if (!horizontal) {
 		set_label_reference(spin[0]); //show text and buttons around this
 	}
@@ -1593,11 +1732,30 @@ void EditorPropertyVector3::_value_changed(double val, const String &p_name) {
 		return;
 	}
 
+	if (linked->is_pressed()) {
+		setting = true;
+		if (p_name == "x") {
+			spin[1]->set_value(spin[0]->get_value() * ratio_yx);
+			spin[2]->set_value(spin[0]->get_value() * ratio_zx);
+		}
+
+		if (p_name == "y") {
+			spin[0]->set_value(spin[1]->get_value() * ratio_xy);
+			spin[2]->set_value(spin[1]->get_value() * ratio_zy);
+		}
+
+		if (p_name == "z") {
+			spin[0]->set_value(spin[2]->get_value() * ratio_xz);
+			spin[1]->set_value(spin[2]->get_value() * ratio_yz);
+		}
+		setting = false;
+	}
+
 	Vector3 v3;
 	v3.x = spin[0]->get_value();
 	v3.y = spin[1]->get_value();
 	v3.z = spin[2]->get_value();
-	emit_changed(get_edited_property(), v3, p_name);
+	emit_changed(get_edited_property(), v3, linked->is_pressed() ? "" : p_name);
 }
 
 void EditorPropertyVector3::update_property() {
@@ -1607,22 +1765,54 @@ void EditorPropertyVector3::update_property() {
 	spin[1]->set_value(val.y);
 	spin[2]->set_value(val.z);
 	setting = false;
+
+	_update_ratio();
 }
+
+void EditorPropertyVector3::_update_ratio() {
+	linked->set_modulate(Color(1, 1, 1, linked->is_pressed() ? 1.0 : 0.5));
+
+	if (spin[0]->get_value() != 0 && spin[1]->get_value() != 0) {
+		ratio_yx = spin[1]->get_value() / spin[0]->get_value();
+		ratio_zx = spin[2]->get_value() / spin[0]->get_value();
+		ratio_xy = spin[0]->get_value() / spin[1]->get_value();
+		ratio_zy = spin[2]->get_value() / spin[1]->get_value();
+		ratio_xz = spin[0]->get_value() / spin[2]->get_value();
+		ratio_yz = spin[1]->get_value() / spin[2]->get_value();
+	} else {
+		ratio_yx = 1.0;
+		ratio_zx = 1.0;
+		ratio_xy = 1.0;
+		ratio_zy = 1.0;
+		ratio_xz = 1.0;
+		ratio_yz = 1.0;
+	}
+}
+
 void EditorPropertyVector3::_notification(int p_what) {
-	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
-		Color base = get_color("accent_color", "Editor");
-		for (int i = 0; i < 3; i++) {
-			Color c = base;
-			c.set_hsv(float(i) / 3.0 + 0.05, c.get_s() * 0.75, c.get_v());
-			spin[i]->set_custom_label_color(true, c);
-		}
+	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE:
+		case NOTIFICATION_THEME_CHANGED: {
+			Ref<Texture> normal_icon = get_icon("Unlinked", "EditorIcons");
+			linked->set_custom_minimum_size(Vector2(normal_icon->get_width(), 0));
+			linked->set_normal_texture(normal_icon);
+			linked->set_pressed_texture(get_icon("Instance", "EditorIcons"));
+
+			Color base = get_color("accent_color", "Editor");
+			for (int i = 0; i < 3; i++) {
+				Color c = base;
+				c.set_hsv(float(i) / 3.0 + 0.05, c.get_s() * 0.75, c.get_v());
+				spin[i]->set_custom_label_color(true, c);
+			}
+		} break;
 	}
 }
 void EditorPropertyVector3::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("_update_ratio"), &EditorPropertyVector3::_update_ratio);
 	ClassDB::bind_method(D_METHOD("_value_changed"), &EditorPropertyVector3::_value_changed);
 }
 
-void EditorPropertyVector3::setup(double p_min, double p_max, double p_step, bool p_no_slider) {
+void EditorPropertyVector3::setup(double p_min, double p_max, double p_step, bool p_no_slider, bool p_link) {
 	for (int i = 0; i < 3; i++) {
 		spin[i]->set_min(p_min);
 		spin[i]->set_max(p_max);
@@ -1631,21 +1821,31 @@ void EditorPropertyVector3::setup(double p_min, double p_max, double p_step, boo
 		spin[i]->set_allow_greater(true);
 		spin[i]->set_allow_lesser(true);
 	}
+
+	if (!p_link) {
+		linked->hide();
+	} else {
+		linked->set_pressed(true);
+	}
 }
 
 EditorPropertyVector3::EditorPropertyVector3() {
 	bool horizontal = EDITOR_GET("interface/inspector/horizontal_vector_types_editing");
 
+	HBoxContainer *hb = memnew(HBoxContainer);
+	hb->set_h_size_flags(SIZE_EXPAND_FILL);
+
 	BoxContainer *bc;
 
 	if (horizontal) {
 		bc = memnew(HBoxContainer);
-		add_child(bc);
-		set_bottom_editor(bc);
+		hb->add_child(bc);
+		set_bottom_editor(hb);
 	} else {
 		bc = memnew(VBoxContainer);
-		add_child(bc);
+		hb->add_child(bc);
 	}
+	bc->set_h_size_flags(SIZE_EXPAND_FILL);
 
 	static const char *desc[3] = { "x", "y", "z" };
 	for (int i = 0; i < 3; i++) {
@@ -1660,11 +1860,21 @@ EditorPropertyVector3::EditorPropertyVector3() {
 		}
 	}
 
+	linked = memnew(TextureButton);
+	linked->set_toggle_mode(true);
+	linked->set_expand(true);
+	linked->set_stretch_mode(TextureButton::STRETCH_KEEP_CENTERED);
+	linked->connect("pressed", this, "_update_ratio");
+	hb->add_child(linked);
+
+	add_child(hb);
 	if (!horizontal) {
 		set_label_reference(spin[0]); //show text and buttons around this
 	}
 	setting = false;
+	_update_ratio();
 }
+
 ///////////////////// PLANE /////////////////////////
 
 void EditorPropertyPlane::_value_changed(double val, const String &p_name) {
@@ -2407,7 +2617,10 @@ void EditorPropertyResource::_resource_selected(const RES &p_resource, bool p_ed
 void EditorPropertyResource::_resource_changed(const RES &p_resource) {
 	// Make visual script the correct type.
 	Ref<Script> s = p_resource;
+	bool is_script = false;
 	if (get_edited_object() && s.is_valid()) {
+		is_script = true;
+		EditorNode::get_singleton()->get_inspector_dock()->store_script_properties(get_edited_object());
 		s->call("set_instance_base_type", get_edited_object()->get_class());
 	}
 
@@ -2432,6 +2645,11 @@ void EditorPropertyResource::_resource_changed(const RES &p_resource) {
 
 	emit_changed(get_edited_property(), p_resource);
 	update_property();
+
+	if (is_script) {
+		// Restore properties if script was changed.
+		EditorNode::get_singleton()->get_inspector_dock()->apply_script_properties(get_edited_object());
+	}
 
 	// Automatically suggest setting up the path for a ViewportTexture.
 	if (vpt.is_valid() && vpt->get_viewport_path_in_scene().is_empty()) {
@@ -2878,6 +3096,10 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 				EditorPropertyClassName *editor = memnew(EditorPropertyClassName);
 				editor->setup("Object", p_hint_text);
 				add_property_editor(p_path, editor);
+			} else if (p_hint == PROPERTY_HINT_LOCALE_ID) {
+				EditorPropertyLocale *editor = memnew(EditorPropertyLocale);
+				editor->setup(p_hint_text);
+				add_property_editor(p_path, editor);
 			} else if (p_hint == PROPERTY_HINT_DIR || p_hint == PROPERTY_HINT_FILE || p_hint == PROPERTY_HINT_SAVE_FILE || p_hint == PROPERTY_HINT_GLOBAL_DIR || p_hint == PROPERTY_HINT_GLOBAL_FILE) {
 				Vector<String> extensions = p_hint_text.split(",");
 				bool global = p_hint == PROPERTY_HINT_GLOBAL_DIR || p_hint == PROPERTY_HINT_GLOBAL_FILE;
@@ -2953,7 +3175,7 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 				hide_slider = false;
 			}
 
-			editor->setup(min, max, step, hide_slider);
+			editor->setup(min, max, step, hide_slider, p_hint == PROPERTY_HINT_LINK);
 			add_property_editor(p_path, editor);
 
 		} break; // 5
@@ -2988,7 +3210,7 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 				hide_slider = false;
 			}
 
-			editor->setup(min, max, step, hide_slider);
+			editor->setup(min, max, step, hide_slider, p_hint == PROPERTY_HINT_LINK);
 			add_property_editor(p_path, editor);
 
 		} break;

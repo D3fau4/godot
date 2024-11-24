@@ -31,7 +31,6 @@
 package org.godotengine.godot;
 
 import org.godotengine.godot.gl.GLSurfaceView;
-import org.godotengine.godot.input.GodotGestureHandler;
 import org.godotengine.godot.input.GodotInputHandler;
 import org.godotengine.godot.utils.GLUtils;
 import org.godotengine.godot.xr.XRMode;
@@ -44,10 +43,20 @@ import org.godotengine.godot.xr.regular.RegularFallbackConfigChooser;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.res.AssetManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.PixelFormat;
-import android.view.GestureDetector;
+import android.os.Build;
+import android.text.TextUtils;
+import android.util.SparseArray;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.PointerIcon;
+
+import androidx.annotation.Keep;
+
+import java.io.InputStream;
 
 import javax.microedition.khronos.egl.EGL10;
 import javax.microedition.khronos.egl.EGLConfig;
@@ -76,8 +85,8 @@ public class GodotView extends GLSurfaceView {
 
 	private final Godot godot;
 	private final GodotInputHandler inputHandler;
-	private final GestureDetector detector;
 	private final GodotRenderer godotRenderer;
+	private final SparseArray<PointerIcon> customPointerIcons = new SparseArray<>();
 
 	private EGLConfigChooser eglConfigChooser;
 	private EGLContextFactory eglContextFactory;
@@ -90,8 +99,11 @@ public class GodotView extends GLSurfaceView {
 
 		this.godot = godot;
 		this.inputHandler = new GodotInputHandler(this);
-		this.detector = new GestureDetector(context, new GodotGestureHandler(this));
 		this.godotRenderer = new GodotRenderer();
+
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+			setPointerIcon(PointerIcon.getSystemIcon(getContext(), PointerIcon.TYPE_DEFAULT));
+		}
 
 		init(xrMode, p_translucent);
 	}
@@ -104,7 +116,6 @@ public class GodotView extends GLSurfaceView {
 	@Override
 	public boolean onTouchEvent(MotionEvent event) {
 		super.onTouchEvent(event);
-		this.detector.onTouchEvent(event);
 		return inputHandler.onTouchEvent(event);
 	}
 
@@ -121,6 +132,89 @@ public class GodotView extends GLSurfaceView {
 	@Override
 	public boolean onGenericMotionEvent(MotionEvent event) {
 		return inputHandler.onGenericMotionEvent(event) || super.onGenericMotionEvent(event);
+	}
+
+	@Override
+	public boolean onCapturedPointerEvent(MotionEvent event) {
+		return inputHandler.onGenericMotionEvent(event);
+	}
+
+	@Override
+	public void onPointerCaptureChange(boolean hasCapture) {
+		super.onPointerCaptureChange(hasCapture);
+		inputHandler.onPointerCaptureChange(hasCapture);
+	}
+
+	@Keep
+	private boolean canCapturePointer() {
+		return inputHandler.canCapturePointer();
+	}
+
+	@Override
+	public void requestPointerCapture() {
+		if (canCapturePointer()) {
+			super.requestPointerCapture();
+			inputHandler.onPointerCaptureChange(true);
+		}
+	}
+
+	@Override
+	public void releasePointerCapture() {
+		super.releasePointerCapture();
+		inputHandler.onPointerCaptureChange(false);
+	}
+
+	/**
+	 * Used to configure the PointerIcon for the given type.
+	 *
+	 * Called from JNI
+	 */
+	@Keep
+	public void configurePointerIcon(int pointerType, String imagePath, float hotSpotX, float hotSpotY) {
+		if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+			try {
+				Bitmap bitmap = null;
+				if (!TextUtils.isEmpty(imagePath)) {
+					if (godot.getDirectoryAccessHandler().filesystemFileExists(imagePath)) {
+						// Try to load the bitmap from the file system
+						bitmap = BitmapFactory.decodeFile(imagePath);
+					} else if (godot.getDirectoryAccessHandler().assetsFileExists(imagePath)) {
+						// Try to load the bitmap from the assets directory
+						AssetManager am = getContext().getAssets();
+						InputStream imageInputStream = am.open(imagePath);
+						bitmap = BitmapFactory.decodeStream(imageInputStream);
+					}
+				}
+
+				PointerIcon customPointerIcon = PointerIcon.create(bitmap, hotSpotX, hotSpotY);
+				customPointerIcons.put(pointerType, customPointerIcon);
+			} catch (Exception e) {
+				// Reset the custom pointer icon
+				customPointerIcons.delete(pointerType);
+			}
+		}
+	}
+
+	/**
+	 * Called from JNI to change the pointer icon
+	 */
+	@Keep
+	private void setPointerIcon(int pointerType) {
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+			PointerIcon pointerIcon = customPointerIcons.get(pointerType);
+			if (pointerIcon == null) {
+				pointerIcon = PointerIcon.getSystemIcon(getContext(), pointerType);
+			}
+			setPointerIcon(pointerIcon);
+		}
+	}
+
+	@Override
+	public PointerIcon onResolvePointerIcon(MotionEvent event, int pointerIndex) {
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+			return getPointerIcon();
+		}
+		return super.onResolvePointerIcon(event, pointerIndex);
 	}
 
 	private void init(XRMode xrMode, boolean translucent) {
@@ -208,10 +302,11 @@ public class GodotView extends GLSurfaceView {
 		return inputHandler;
 	}
 
-	@Override
-	public void onResume() {
-		super.onResume();
+	void onActivityStarted() {
+		resumeGLThread();
+	}
 
+	void onActivityResumed() {
 		queueEvent(() -> {
 			// Resume the renderer
 			godotRenderer.onActivityResumed();
@@ -219,14 +314,15 @@ public class GodotView extends GLSurfaceView {
 		});
 	}
 
-	@Override
-	public void onPause() {
-		super.onPause();
-
+	void onActivityPaused() {
 		queueEvent(() -> {
 			GodotLib.focusout();
 			// Pause the renderer
 			godotRenderer.onActivityPaused();
 		});
+	}
+
+	void onActivityStopped() {
+		pauseGLThread();
 	}
 }

@@ -34,20 +34,6 @@
 #include "editor_scale.h"
 #include "editor_settings.h"
 
-static bool _property_path_matches(const String &p_property_path, const String &p_filter, EditorPropertyNameProcessor::Style p_style) {
-	if (p_property_path.findn(p_filter) != -1) {
-		return true;
-	}
-
-	const Vector<String> sections = p_property_path.split("/");
-	for (int i = 0; i < sections.size(); i++) {
-		if (p_filter.is_subsequence_ofi(EditorPropertyNameProcessor::get_singleton()->process_name(sections[i], p_style))) {
-			return true;
-		}
-	}
-	return false;
-}
-
 class SectionedInspectorFilter : public Object {
 	GDCLASS(SectionedInspectorFilter, Object);
 
@@ -145,6 +131,20 @@ public:
 	}
 };
 
+bool SectionedInspector::_property_path_matches(const String &p_property_path, const String &p_filter, EditorPropertyNameProcessor::Style p_style) {
+	if (p_property_path.findn(p_filter) != -1) {
+		return true;
+	}
+
+	const Vector<String> sections = p_property_path.split("/");
+	for (int i = 0; i < sections.size(); i++) {
+		if (p_filter.is_subsequence_ofi(EditorPropertyNameProcessor::get_singleton()->process_name(sections[i], p_style))) {
+			return true;
+		}
+	}
+	return false;
+}
+
 void SectionedInspector::_bind_methods() {
 	ClassDB::bind_method("_section_selected", &SectionedInspector::_section_selected);
 	ClassDB::bind_method("_search_changed", &SectionedInspector::_search_changed);
@@ -164,7 +164,9 @@ void SectionedInspector::_section_selected() {
 
 void SectionedInspector::set_current_section(const String &p_section) {
 	if (section_map.has(p_section)) {
-		section_map[p_section]->select(0);
+		TreeItem *item = section_map[p_section];
+		item->select(0);
+		sections->scroll_to_item(item);
 	}
 }
 

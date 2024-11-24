@@ -43,6 +43,7 @@
 #include "editor_scale.h"
 #include "editor_settings.h"
 #include "editor_themes.h"
+#include "main/main.h"
 #include "scene/gui/center_container.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/margin_container.h"
@@ -1789,11 +1790,13 @@ void ProjectManager::_notification(int p_what) {
 			}
 		} break;
 		case NOTIFICATION_READY: {
+#ifndef ANDROID_ENABLED
 			if (_project_list->get_project_count() >= 1) {
 				// Focus on the search box immediately to allow the user
 				// to search without having to reach for their mouse
 				project_filter->search_box->grab_focus();
 			}
+#endif
 
 			if (asset_library) {
 				// Suggest browsing asset library to get templates/demos.
@@ -2014,22 +2017,15 @@ void ProjectManager::_open_selected_projects() {
 
 		List<String> args;
 
+		const Vector<String> &forwardable_args = Main::get_forwardable_cli_arguments(Main::CLI_SCOPE_TOOL);
+		for (int i = 0; i < forwardable_args.size(); i++) {
+			args.push_back(forwardable_args[i]);
+		}
+
 		args.push_back("--path");
 		args.push_back(path);
 
 		args.push_back("--editor");
-
-		if (OS::get_singleton()->is_stdout_debug_enabled()) {
-			args.push_back("--debug");
-		}
-
-		if (OS::get_singleton()->is_stdout_verbose()) {
-			args.push_back("--verbose");
-		}
-
-		if (OS::get_singleton()->is_disable_crash_handler()) {
-			args.push_back("--disable-crash-handler");
-		}
 
 		String exec = OS::get_singleton()->get_executable_path();
 
@@ -2114,12 +2110,13 @@ void ProjectManager::_run_project_confirm() {
 
 		List<String> args;
 
+		const Vector<String> &forwardable_args = Main::get_forwardable_cli_arguments(Main::CLI_SCOPE_PROJECT);
+		for (int j = 0; j < forwardable_args.size(); j++) {
+			args.push_back(forwardable_args[j]);
+		}
+
 		args.push_back("--path");
 		args.push_back(path);
-
-		if (OS::get_singleton()->is_disable_crash_handler()) {
-			args.push_back("--disable-crash-handler");
-		}
 
 		String exec = OS::get_singleton()->get_executable_path();
 
@@ -2336,6 +2333,7 @@ void ProjectManager::_on_filter_option_changed() {
 }
 
 void ProjectManager::_on_tab_changed(int p_tab) {
+#ifndef ANDROID_ENABLED
 	if (p_tab == 0) { // Projects
 		// Automatically grab focus when the user moves from the Templates tab
 		// back to the Projects tab.
@@ -2347,6 +2345,7 @@ void ProjectManager::_on_tab_changed(int p_tab) {
 
 	// The Templates tab's search field is focused on display in the asset
 	// library editor plugin code.
+#endif
 }
 
 void ProjectManager::_bind_methods() {
@@ -2392,6 +2391,7 @@ void ProjectManager::_version_button_pressed() {
 }
 
 ProjectManager::ProjectManager() {
+	OS::get_singleton()->benchmark_begin_measure("project_manager");
 	// load settings
 	if (!EditorSettings::get_singleton()) {
 		EditorSettings::create();
@@ -2439,6 +2439,13 @@ ProjectManager::ProjectManager() {
 	FileDialog::set_default_show_hidden_files(EditorSettings::get_singleton()->get("filesystem/file_dialog/show_hidden_files"));
 
 	set_anchors_and_margins_preset(Control::PRESET_WIDE);
+
+	int swap_cancel_ok = EDITOR_GET("interface/editor/accept_dialog_cancel_ok_buttons");
+	if (swap_cancel_ok != 0) { // 0 is auto, set in register_scene based on OS.
+		// Swap on means OK first.
+		AcceptDialog::set_swap_ok_cancel(swap_cancel_ok == 2);
+	}
+
 	set_theme(create_custom_theme());
 
 	gui_base = memnew(Control);
@@ -2785,6 +2792,8 @@ ProjectManager::ProjectManager() {
 
 	about = memnew(EditorAbout);
 	add_child(about);
+
+	OS::get_singleton()->benchmark_end_measure("project_manager");
 }
 
 ProjectManager::~ProjectManager() {

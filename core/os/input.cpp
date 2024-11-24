@@ -45,7 +45,7 @@ Input *Input::get_singleton() {
 }
 
 void Input::set_mouse_mode(MouseMode p_mode) {
-	ERR_FAIL_INDEX((int)p_mode, 4);
+	ERR_FAIL_INDEX((int)p_mode, 5);
 	OS::get_singleton()->set_mouse_mode((OS::MouseMode)p_mode);
 }
 
@@ -72,6 +72,7 @@ void Input::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_joy_axis", "device", "axis"), &Input::get_joy_axis);
 	ClassDB::bind_method(D_METHOD("get_joy_name", "device"), &Input::get_joy_name);
 	ClassDB::bind_method(D_METHOD("get_joy_guid", "device"), &Input::get_joy_guid);
+	ClassDB::bind_method(D_METHOD("should_ignore_device", "vendor_id", "product_id"), &Input::should_ignore_device);
 	ClassDB::bind_method(D_METHOD("get_connected_joypads"), &Input::get_connected_joypads);
 	ClassDB::bind_method(D_METHOD("get_joy_vibration_strength", "device"), &Input::get_joy_vibration_strength);
 	ClassDB::bind_method(D_METHOD("get_joy_vibration_duration", "device"), &Input::get_joy_vibration_duration);
@@ -113,6 +114,7 @@ void Input::_bind_methods() {
 	BIND_ENUM_CONSTANT(MOUSE_MODE_HIDDEN);
 	BIND_ENUM_CONSTANT(MOUSE_MODE_CAPTURED);
 	BIND_ENUM_CONSTANT(MOUSE_MODE_CONFINED);
+	BIND_ENUM_CONSTANT(MOUSE_MODE_CONFINED_HIDDEN);
 
 	BIND_ENUM_CONSTANT(CURSOR_ARROW);
 	BIND_ENUM_CONSTANT(CURSOR_IBEAM);

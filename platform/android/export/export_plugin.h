@@ -206,7 +206,10 @@ public:
 
 	static String get_apksigner_path();
 
-	virtual bool can_export(const Ref<EditorExportPreset> &p_preset, String &r_error, bool &r_missing_templates) const;
+	static String get_java_path();
+
+	virtual bool has_valid_export_configuration(const Ref<EditorExportPreset> &p_preset, String &r_error, bool &r_missing_templates) const;
+	virtual bool has_valid_project_configuration(const Ref<EditorExportPreset> &p_preset, String &r_error) const;
 
 	virtual List<String> get_binary_extensions(const Ref<EditorExportPreset> &p_preset) const;
 

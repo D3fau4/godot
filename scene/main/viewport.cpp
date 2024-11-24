@@ -54,6 +54,8 @@
 #include "scene/scene_string_names.h"
 #include "servers/physics_2d_server.h"
 
+LocalVector<Viewport::GUI::CanvasParent> Viewport::GUI::canvas_parents_dirty_order;
+
 void ViewportTexture::setup_local_to_scene() {
 	Node *local_scene = get_local_scene();
 	if (!local_scene) {
@@ -184,6 +186,7 @@ public:
 Viewport::GUI::GUI() {
 	dragging = false;
 	drag_successful = false;
+	mouse_in_window = true;
 	mouse_focus = nullptr;
 	mouse_click_grabber = nullptr;
 	mouse_focus_mask = 0;
@@ -398,21 +401,26 @@ void Viewport::_notification(int p_what) {
 				_process_picking(false);
 			}
 		} break;
-		case SceneTree::NOTIFICATION_WM_MOUSE_EXIT: {
-			_drop_physics_mouseover();
-
-			// Unlike on loss of focus (NOTIFICATION_WM_WINDOW_FOCUS_OUT), do not
-			// drop the gui mouseover here, as a scrollbar may be dragged while the
-			// mouse is outside the window (without the window having lost focus).
-			// See bug #39634
+		case NOTIFICATION_WM_MOUSE_ENTER: {
+			gui.mouse_in_window = true;
 		} break;
-		case SceneTree::NOTIFICATION_WM_FOCUS_OUT: {
+		case NOTIFICATION_WM_MOUSE_EXIT: {
+			gui.mouse_in_window = false;
 			_drop_physics_mouseover();
-
+			_drop_mouse_over();
+			// When the mouse exits the window, we want to end mouse_over, but
+			// not mouse_focus, because, for example, we want to continue
+			// dragging a scrollbar even if the mouse has left the window.
+		} break;
+		case NOTIFICATION_WM_FOCUS_OUT: {
+			_drop_physics_mouseover();
 			if (gui.mouse_focus) {
-				//if mouse is being pressed, send a release event
 				_drop_mouse_focus();
 			}
+			// When the window focus changes, we want to end mouse_focus, but
+			// not the mouse_over. Note: The OS will trigger a separate mouse
+			// exit event if the change in focus results in the mouse exiting
+			// the window.
 		} break;
 	}
 }
@@ -723,6 +731,10 @@ void Viewport::set_size(const Size2 &p_size) {
 
 	_update_stretch_transform();
 	update_configuration_warning();
+
+	for (Set<ViewportTexture *>::Element *E = viewport_textures.front(); E; E = E->next()) {
+		E->get()->emit_changed();
+	}
 
 	emit_signal("size_changed");
 }
@@ -1404,6 +1416,8 @@ void Viewport::_vp_input_text(const String &p_text) {
 }
 
 void Viewport::_vp_input(const Ref<InputEvent> &p_ev) {
+	ERR_FAIL_COND(p_ev.is_null());
+
 	if (disable_input) {
 		return;
 	}
@@ -1426,6 +1440,8 @@ void Viewport::_vp_input(const Ref<InputEvent> &p_ev) {
 }
 
 void Viewport::_vp_unhandled_input(const Ref<InputEvent> &p_ev) {
+	ERR_FAIL_COND(p_ev.is_null());
+
 	if (disable_input) {
 		return;
 	}
@@ -1772,8 +1788,8 @@ Control *Viewport::_gui_find_control_at_pos(CanvasItem *p_node, const Point2 &p_
 	}
 
 	Transform2D matrix = p_xform * p_node->get_transform();
-	// matrix.basis_determinant() == 0.0f implies that node does not exist on scene
-	if (matrix.basis_determinant() == 0.0f) {
+	// matrix.determinant() == 0.0f implies that node does not exist on scene
+	if (matrix.determinant() == 0.0f) {
 		return nullptr;
 	}
 
@@ -1861,9 +1877,6 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 
 	if (mb.is_valid()) {
 		gui.key_event_accepted = false;
-
-		Control *over = nullptr;
-
 		Point2 mpos = mb->get_position();
 		if (mb->is_pressed()) {
 			Size2 pos = mpos;
@@ -2057,6 +2070,8 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 			// it is different, rather than wait for it to be updated the next time the
 			// mouse is moved, notify the control so that it can e.g. drop the highlight.
 			// This code is duplicated from the mm.is_valid()-case further below.
+
+			Control *over = nullptr;
 			if (gui.mouse_focus) {
 				over = gui.mouse_focus;
 			} else {
@@ -2086,8 +2101,6 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 		Point2 mpos = mm->get_position();
 
 		gui.last_mouse_pos = mpos;
-
-		Control *over = nullptr;
 
 		// D&D
 		if (!gui.drag_attempted && gui.mouse_focus && mm->get_button_mask() & BUTTON_MASK_LEFT) {
@@ -2135,12 +2148,10 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 			}
 		}
 
-		// These sections of code are reused in the mb.is_valid() case further up
-		// for the purpose of notifying controls about potential changes in focus
-		// when the mousebutton is released.
+		Control *over = nullptr;
 		if (gui.mouse_focus) {
 			over = gui.mouse_focus;
-		} else {
+		} else if (gui.mouse_in_window) {
 			over = _gui_find_control(mpos);
 		}
 
@@ -2189,10 +2200,9 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 
 			if (over) {
 				_gui_call_notification(over, Control::NOTIFICATION_MOUSE_ENTER);
+				gui.mouse_over = over;
 			}
 		}
-
-		gui.mouse_over = over;
 
 		Control *drag_preview = _gui_get_drag_preview();
 		if (drag_preview) {
@@ -2238,8 +2248,6 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 						if (tooltip == gui.tooltip_label->get_text()) {
 							is_tooltip_shown = true;
 						}
-					} else if (tooltip == String(gui.tooltip_popup->call("get_tooltip_text"))) {
-						is_tooltip_shown = true;
 					}
 				} else {
 					_gui_cancel_tooltip();
@@ -2303,9 +2311,11 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 	Ref<InputEventScreenTouch> touch_event = p_event;
 	if (touch_event.is_valid()) {
 		Size2 pos = touch_event->get_position();
+		const int touch_index = touch_event->get_index();
 		if (touch_event->is_pressed()) {
 			Control *over = _gui_find_control(pos);
 			if (over) {
+				gui.touch_focus[touch_index] = over->get_instance_id();
 				if (!gui.modal_stack.empty()) {
 					Control *top = gui.modal_stack.back()->get();
 					if (over != top && !top->is_a_parent_of(over)) {
@@ -2321,18 +2331,26 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 					}
 					touch_event->set_position(pos);
 					_gui_call_input(over, touch_event);
+					set_input_as_handled();
 				}
-				set_input_as_handled();
 				return;
 			}
-		} else if (touch_event->get_index() == 0 && gui.last_mouse_focus) {
-			if (gui.last_mouse_focus->can_process()) {
+		} else {
+			ObjectID control_id = gui.touch_focus[touch_index];
+			Control *over = Object::cast_to<Control>(ObjectDB::get_instance(control_id));
+			if (over && over->can_process()) {
 				touch_event = touch_event->xformed_by(Transform2D()); //make a copy
-				touch_event->set_position(gui.focus_inv_xform.xform(pos));
+				if (over == gui.last_mouse_focus) {
+					pos = gui.focus_inv_xform.xform(pos);
+				} else {
+					pos = over->get_global_transform_with_canvas().affine_inverse().xform(pos);
+				}
+				touch_event->set_position(pos);
 
-				_gui_call_input(gui.last_mouse_focus, touch_event);
+				_gui_call_input(over, touch_event);
+				set_input_as_handled();
 			}
-			set_input_as_handled();
+			gui.touch_focus.erase(touch_index);
 			return;
 		}
 	}
@@ -2364,7 +2382,9 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 
 	Ref<InputEventScreenDrag> drag_event = p_event;
 	if (drag_event.is_valid()) {
-		Control *over = gui.mouse_focus;
+		const int drag_event_index = drag_event->get_index();
+		ObjectID control_id = gui.touch_focus[drag_event_index];
+		Control *over = Object::cast_to<Control>(ObjectDB::get_instance(control_id));
 		if (!over) {
 			over = _gui_find_control(drag_event->get_position());
 		}
@@ -3196,6 +3216,130 @@ bool Viewport::is_handling_input_locally() const {
 	return handle_input_locally;
 }
 
+void Viewport::notify_canvas_parent_child_count_reduced(const Node &p_parent) {
+	uint32_t id = p_parent.get_canvas_parent_id();
+
+	ERR_FAIL_COND(id == UINT32_MAX);
+	ERR_FAIL_UNSIGNED_INDEX(id, GUI::canvas_parents_dirty_order.size());
+
+	GUI::CanvasParent &d = GUI::canvas_parents_dirty_order[id];
+
+	// No pending children moved.
+	if (!d.last_child_moved_plus_one) {
+		return;
+	}
+
+	uint32_t num_children = p_parent.get_child_count();
+	d.last_child_moved_plus_one = MIN(d.last_child_moved_plus_one, num_children);
+}
+
+void Viewport::notify_canvas_parent_children_moved(Node &r_parent, uint32_t p_first_child, uint32_t p_last_child_plus_one) {
+	// First ensure the parent has a CanvasParent allocated.
+	uint32_t id = r_parent.get_canvas_parent_id();
+
+	if (id == UINT32_MAX) {
+		id = GUI::canvas_parents_dirty_order.size();
+		r_parent.set_canvas_parent_id(id);
+		GUI::canvas_parents_dirty_order.resize(id + 1);
+
+		GUI::CanvasParent &d = GUI::canvas_parents_dirty_order[id];
+		d.id = r_parent.get_instance_id();
+		d.first_child_moved = p_first_child;
+		d.last_child_moved_plus_one = p_last_child_plus_one;
+		return;
+	}
+
+	GUI::CanvasParent &d = GUI::canvas_parents_dirty_order[id];
+	DEV_CHECK_ONCE(d.id == r_parent.get_instance_id());
+	d.first_child_moved = MIN(d.first_child_moved, p_first_child);
+	d.last_child_moved_plus_one = MAX(d.last_child_moved_plus_one, p_last_child_plus_one);
+}
+
+void Viewport::flush_canvas_parents_dirty_order() {
+	bool canvas_layers_moved = false;
+
+	for (uint32_t n = 0; n < GUI::canvas_parents_dirty_order.size(); n++) {
+		GUI::CanvasParent &d = GUI::canvas_parents_dirty_order[n];
+
+		Object *obj = ObjectDB::get_instance(d.id);
+		if (!obj) {
+			// May have been deleted.
+			continue;
+		}
+
+		Node *node = static_cast<Node *>(obj);
+		Control *parent_control = Object::cast_to<Control>(node);
+
+		// Allow anything subscribing to this signal (skeletons etc)
+		// to make any changes necessary.
+		node->emit_signal("child_order_changed");
+
+		// Reset the id stored in the node, as this data is cleared after every flush.
+		node->set_canvas_parent_id(UINT32_MAX);
+
+		// This should be very rare, as the last_child_moved_plus_one is usually kept up
+		// to date when within the scene tree. But it may become out of date outside the scene tree.
+		// This will cause no problems, just a very small possibility of more notifications being sent than
+		// necessary in that very rare situation.
+		if (d.last_child_moved_plus_one > (uint32_t)node->get_child_count()) {
+			d.last_child_moved_plus_one = node->get_child_count();
+		}
+
+		bool subwindow_order_dirty = false;
+		bool root_order_dirty = false;
+		bool control_found = false;
+
+		for (uint32_t c = d.first_child_moved; c < d.last_child_moved_plus_one; c++) {
+			Node *child = node->get_child(c);
+
+			CanvasItem *ci = Object::cast_to<CanvasItem>(child);
+			if (ci) {
+				ci->update_draw_order();
+
+				Control *control = Object::cast_to<Control>(ci);
+				if (control) {
+					control->_query_order_update(subwindow_order_dirty, root_order_dirty);
+
+					if (parent_control && !control_found) {
+						control_found = true;
+
+						// In case of regressions, this could be moved to AFTER
+						// the children have been updated.
+						parent_control->update();
+					}
+					control->update();
+				}
+
+				continue;
+			}
+
+			CanvasLayer *cl = Object::cast_to<CanvasLayer>(child);
+			if (cl) {
+				// If any canvas layers moved, we need to do an expensive update,
+				// so we ensure doing this only once.
+				if (!canvas_layers_moved) {
+					canvas_layers_moved = true;
+					cl->update_draw_order();
+				}
+			}
+		}
+
+		Viewport *viewport = node->get_viewport();
+		if (viewport) {
+			if (subwindow_order_dirty) {
+				viewport->_gui_set_subwindow_order_dirty();
+			}
+			if (root_order_dirty) {
+				viewport->_gui_set_root_order_dirty();
+			}
+		}
+
+		node->notification(Node::NOTIFICATION_CHILD_ORDER_CHANGED);
+	}
+
+	GUI::canvas_parents_dirty_order.clear();
+}
+
 void Viewport::_validate_property(PropertyInfo &property) const {
 	if (VisualServer::get_singleton()->is_low_end() && (property.name == "hdr" || property.name == "use_32_bpc_depth" || property.name == "debanding" || property.name == "sharpen_intensity" || property.name == "debug_draw")) {
 		// Only available in GLES3.
@@ -3537,6 +3681,13 @@ Viewport::Viewport() {
 	local_input_handled = false;
 	handle_input_locally = true;
 	physics_last_id = 0; //ensures first time there will be a check
+
+	// Physics interpolation mode for viewports is a special case.
+	// Typically viewports will be housed within Controls,
+	// and Controls default to PHYSICS_INTERPOLATION_MODE_OFF.
+	// Viewports can thus inherit physics interpolation OFF, which is unexpected.
+	// Setting to ON allows each viewport to have a fresh interpolation state.
+	set_physics_interpolation_mode(Node::PHYSICS_INTERPOLATION_MODE_ON);
 }
 
 Viewport::~Viewport() {

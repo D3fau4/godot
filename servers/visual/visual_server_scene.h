@@ -43,6 +43,8 @@
 #include "portals/portal_renderer.h"
 #include "servers/arvr/arvr_interface.h"
 
+class VisualServerLightCuller;
+
 class VisualServerScene {
 public:
 	enum {
@@ -79,19 +81,11 @@ public:
 		uint32_t visible_layers;
 		RID env;
 
-		// transform_prev is only used when using fixed timestep interpolation
 		Transform transform;
-		Transform transform_prev;
-
-		bool interpolated : 1;
-		bool on_interpolate_transform_list : 1;
 
 		bool vaspect : 1;
-		TransformInterpolator::Method interpolation_method : 3;
 
 		int32_t previous_room_id_hint;
-
-		Transform get_transform_interpolated() const;
 
 		Camera() {
 			visible_layers = 0xFFFFFFFF;
@@ -103,9 +97,6 @@ public:
 			offset = Vector2();
 			vaspect = false;
 			previous_room_id_hint = -1;
-			interpolated = true;
-			on_interpolate_transform_list = false;
-			interpolation_method = TransformInterpolator::INTERP_LERP;
 		}
 	};
 
@@ -116,8 +107,6 @@ public:
 	virtual void camera_set_orthogonal(RID p_camera, float p_size, float p_z_near, float p_z_far);
 	virtual void camera_set_frustum(RID p_camera, float p_size, Vector2 p_offset, float p_z_near, float p_z_far);
 	virtual void camera_set_transform(RID p_camera, const Transform &p_transform);
-	virtual void camera_set_interpolated(RID p_camera, bool p_interpolated);
-	virtual void camera_reset_physics_interpolation(RID p_camera);
 	virtual void camera_set_cull_mask(RID p_camera, uint32_t p_layers);
 	virtual void camera_set_environment(RID p_camera, RID p_env);
 	virtual void camera_set_use_vertical_aspect(RID p_camera, bool p_enable);
@@ -135,7 +124,7 @@ public:
 
 	class SpatialPartitioningScene {
 	public:
-		virtual SpatialPartitionID create(Instance *p_userdata, const AABB &p_aabb = AABB(), int p_subindex = 0, bool p_pairable = false, uint32_t p_pairable_type = 0, uint32_t pairable_mask = 1) = 0;
+		virtual SpatialPartitionID create(Instance *p_userdata, const AABB &p_aabb, int p_subindex, bool p_pairable, uint32_t p_pairable_type, uint32_t pairable_mask) = 0;
 		virtual void erase(SpatialPartitionID p_handle) = 0;
 		virtual void move(SpatialPartitionID p_handle, const AABB &p_aabb) = 0;
 		virtual void activate(SpatialPartitionID p_handle, const AABB &p_aabb) {}
@@ -168,7 +157,7 @@ public:
 		Octree_CL<Instance, true> _octree;
 
 	public:
-		SpatialPartitionID create(Instance *p_userdata, const AABB &p_aabb = AABB(), int p_subindex = 0, bool p_pairable = false, uint32_t p_pairable_type = 0, uint32_t pairable_mask = 1);
+		SpatialPartitionID create(Instance *p_userdata, const AABB &p_aabb, int p_subindex, bool p_pairable, uint32_t p_pairable_type, uint32_t pairable_mask);
 		void erase(SpatialPartitionID p_handle);
 		void move(SpatialPartitionID p_handle, const AABB &p_aabb);
 		void set_pairable(Instance *p_instance, bool p_pairable, uint32_t p_pairable_type, uint32_t p_pairable_mask);
@@ -231,10 +220,25 @@ public:
 		BVH_Manager<Instance, 2, true, 256, UserPairTestFunction<Instance>, UserCullTestFunction<Instance>> _bvh;
 		Instance *_dummy_cull_object;
 
+		uint32_t find_tree_id_and_collision_mask(bool p_pairable, uint32_t &r_tree_collision_mask) const {
+			// "pairable" (lights etc) can pair with geometry (non pairable) or other pairables.
+			// Geometry never pairs with other geometry, so we can eliminate geometry - geometry collision checks.
+
+			// Additionally, when lights are made invisible their p_pairable_mask is set to zero to stop their collisions.
+			// We could potentially choose `tree_collision_mask` based on whether p_pairable_mask is zero,
+			// in order to catch invisible lights, but in practice these instances will already have been deactivated within
+			// the BVH so this step is unnecessary. So we can keep the simpler logic of geometry collides with pairable,
+			// pairable collides with everything.
+			r_tree_collision_mask = !p_pairable ? 2 : 3;
+
+			// Returns tree_id.
+			return p_pairable ? 1 : 0;
+		}
+
 	public:
 		SpatialPartitioningScene_BVH();
 		~SpatialPartitioningScene_BVH();
-		SpatialPartitionID create(Instance *p_userdata, const AABB &p_aabb = AABB(), int p_subindex = 0, bool p_pairable = false, uint32_t p_pairable_type = 0, uint32_t p_pairable_mask = 1);
+		SpatialPartitionID create(Instance *p_userdata, const AABB &p_aabb, int p_subindex, bool p_pairable, uint32_t p_pairable_type, uint32_t p_pairable_mask);
 		void erase(SpatialPartitionID p_handle);
 		void move(SpatialPartitionID p_handle, const AABB &p_aabb);
 		void activate(SpatialPartitionID p_handle, const AABB &p_aabb);
@@ -374,7 +378,7 @@ public:
 
 			custom_aabb = nullptr;
 			sorting_offset = 0.0f;
-			use_aabb_center = false;
+			use_aabb_center = true;
 		}
 
 		~Instance() {
@@ -393,18 +397,11 @@ public:
 	virtual void set_physics_interpolation_enabled(bool p_enabled);
 
 	struct InterpolationData {
-		void notify_free_camera(RID p_rid, Camera &r_camera);
 		void notify_free_instance(RID p_rid, Instance &r_instance);
 		LocalVector<RID> instance_interpolate_update_list;
 		LocalVector<RID> instance_transform_update_lists[2];
 		LocalVector<RID> *instance_transform_update_list_curr = &instance_transform_update_lists[0];
 		LocalVector<RID> *instance_transform_update_list_prev = &instance_transform_update_lists[1];
-		LocalVector<RID> instance_teleport_list;
-
-		LocalVector<RID> camera_transform_update_lists[2];
-		LocalVector<RID> *camera_transform_update_list_curr = &camera_transform_update_lists[0];
-		LocalVector<RID> *camera_transform_update_list_prev = &camera_transform_update_lists[1];
-		LocalVector<RID> camera_teleport_list;
 
 		bool interpolation_enabled = false;
 	} _interpolation_data;
@@ -469,16 +466,60 @@ public:
 		RID instance;
 		uint64_t last_version;
 		List<Instance *>::Element *D; // directional light in scenario
-
-		bool shadow_dirty;
-
 		List<PairInfo> geometries;
 
 		Instance *baked_light;
 		int32_t previous_room_id_hint;
 
+	private:
+		// Instead of a single dirty flag, we maintain a count
+		// so that we can detect lights that are being made dirty
+		// each frame, and switch on tighter caster culling.
+		int32_t shadow_dirty_count;
+
+		uint32_t light_update_frame_id;
+		bool light_intersects_multiple_cameras;
+		uint32_t light_intersects_multiple_cameras_timeout_frame_id;
+
+	public:
+		bool is_shadow_dirty() const { return shadow_dirty_count != 0; }
+		void make_shadow_dirty() { shadow_dirty_count = light_intersects_multiple_cameras ? 1 : 2; }
+		void detect_light_intersects_multiple_cameras(uint32_t p_frame_id) {
+			// We need to detect the case where shadow updates are occurring
+			// more than once per frame. In this case, we need to turn off
+			// tighter caster culling, so situation reverts to one full shadow update
+			// per frame (light_intersects_multiple_cameras is set).
+			if (p_frame_id == light_update_frame_id) {
+				light_intersects_multiple_cameras = true;
+				light_intersects_multiple_cameras_timeout_frame_id = p_frame_id + 60;
+			} else {
+				// When shadow_volume_intersects_multiple_cameras is set, we
+				// want to detect the situation this is no longer the case, via a timeout.
+				// The system can go back to tighter caster culling in this situation.
+				// Having a long-ish timeout prevents rapid cycling.
+				if (light_intersects_multiple_cameras && (p_frame_id >= light_intersects_multiple_cameras_timeout_frame_id)) {
+					light_intersects_multiple_cameras = false;
+					light_intersects_multiple_cameras_timeout_frame_id = UINT32_MAX;
+				}
+			}
+			light_update_frame_id = p_frame_id;
+		}
+
+		void decrement_shadow_dirty() {
+			shadow_dirty_count--;
+			DEV_ASSERT(shadow_dirty_count >= 0);
+		}
+
+		// Shadow updates can either full (everything in the shadow volume)
+		// or closely culled to the camera frustum.
+		bool is_shadow_update_full() const { return shadow_dirty_count == 0; }
+
 		InstanceLightData() {
-			shadow_dirty = true;
+			shadow_dirty_count = 1;
+			light_update_frame_id = UINT32_MAX;
+			light_intersects_multiple_cameras_timeout_frame_id = UINT32_MAX;
+			light_intersects_multiple_cameras = false;
+
 			D = nullptr;
 			last_version = 0;
 			baked_light = nullptr;
@@ -608,6 +649,7 @@ public:
 	RID light_instance_cull_result[MAX_LIGHTS_CULLED];
 	int light_cull_count;
 	int directional_light_count;
+	VisualServerLightCuller *light_culler;
 	RID reflection_probe_instance_cull_result[MAX_REFLECTION_PROBES_CULLED];
 	int reflection_probe_cull_count;
 
@@ -830,15 +872,12 @@ public:
 	virtual void instance_geometry_set_material_override(RID p_instance, RID p_material);
 	virtual void instance_geometry_set_material_overlay(RID p_instance, RID p_material);
 
-	virtual void instance_geometry_set_draw_range(RID p_instance, float p_min, float p_max, float p_min_margin, float p_max_margin);
-	virtual void instance_geometry_set_as_instance_lod(RID p_instance, RID p_as_lod_of_instance);
-
 	_FORCE_INLINE_ void _update_instance(Instance *p_instance);
 	_FORCE_INLINE_ void _update_instance_aabb(Instance *p_instance);
 	_FORCE_INLINE_ void _update_dirty_instance(Instance *p_instance);
 	_FORCE_INLINE_ void _update_instance_lightmap_captures(Instance *p_instance);
 
-	_FORCE_INLINE_ bool _light_instance_update_shadow(Instance *p_instance, const Transform p_cam_transform, const CameraMatrix &p_cam_projection, bool p_cam_orthogonal, RID p_shadow_atlas, Scenario *p_scenario);
+	_FORCE_INLINE_ bool _light_instance_update_shadow(Instance *p_instance, const Transform p_cam_transform, const CameraMatrix &p_cam_projection, bool p_cam_orthogonal, RID p_shadow_atlas, Scenario *p_scenario, uint32_t p_visible_layers = 0xFFFFFF);
 
 	void _prepare_scene(const Transform p_cam_transform, const CameraMatrix &p_cam_projection, bool p_cam_orthogonal, RID p_force_environment, uint32_t p_visible_layers, RID p_scenario, RID p_shadow_atlas, RID p_reflection_probe, int32_t &r_previous_room_id_hint);
 	void _render_scene(const Transform p_cam_transform, const CameraMatrix &p_cam_projection, const int p_eye, bool p_cam_orthogonal, RID p_force_environment, RID p_scenario, RID p_shadow_atlas, RID p_reflection_probe, int p_reflection_probe_pass);

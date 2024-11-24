@@ -167,7 +167,7 @@ public:
 	HANDLE mouse_mode_changed;
 
 	virtual void alert(const String &p_alert, const String &p_title = "ALERT!");
-	String get_stdin_string(bool p_block);
+	String get_stdin_string();
 
 	void set_mouse_mode(MouseMode p_mode);
 	MouseMode get_mouse_mode() const;
@@ -217,6 +217,8 @@ public:
 	virtual void set_custom_mouse_cursor(const RES &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot);
 	void set_icon(const Ref<Image> &p_icon);
 
+	virtual String get_unique_id() const;
+
 	virtual String get_executable_path() const;
 
 	virtual String get_locale() const;
@@ -237,7 +239,7 @@ public:
 	virtual bool has_touchscreen_ui_hint() const;
 
 	virtual bool has_virtual_keyboard() const;
-	virtual void show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect = Rect2(), bool p_multiline = false, int p_max_input_length = -1, int p_cursor_start = -1, int p_cursor_end = -1);
+	virtual void show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect = Rect2(), VirtualKeyboardType p_type = KEYBOARD_TYPE_DEFAULT, int p_max_input_length = -1, int p_cursor_start = -1, int p_cursor_end = -1);
 	virtual void hide_virtual_keyboard();
 
 	virtual Error open_dynamic_library(const String p_path, void *&p_library_handle, bool p_also_set_library_path = false);

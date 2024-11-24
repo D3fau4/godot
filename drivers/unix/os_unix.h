@@ -53,7 +53,7 @@ public:
 	OS_Unix();
 
 	virtual void alert(const String &p_alert, const String &p_title = "ALERT!");
-	virtual String get_stdin_string(bool p_block);
+	virtual String get_stdin_string();
 
 	//virtual void set_mouse_show(bool p_show);
 	//virtual void set_mouse_grab(bool p_grab);
@@ -95,9 +95,6 @@ public:
 	virtual bool set_environment(const String &p_var, const String &p_value) const;
 	virtual String get_locale() const;
 
-	virtual int get_processor_count() const;
-
-	virtual void debug_break();
 	virtual void initialize_debugging();
 
 	virtual String get_executable_path() const;

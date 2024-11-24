@@ -58,6 +58,7 @@ public:
 
 	Variant get_valid(const Variant &p_key) const;
 	Variant get(const Variant &p_key, const Variant &p_default) const;
+	Variant get_or_add(const Variant &p_key, const Variant &p_default);
 
 	int size() const;
 	bool empty() const;
@@ -66,6 +67,7 @@ public:
 
 	bool has(const Variant &p_key) const;
 	bool has_all(const Array &p_keys) const;
+	Variant find_key(const Variant &p_value) const;
 
 	bool erase(const Variant &p_key);
 

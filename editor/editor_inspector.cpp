@@ -43,20 +43,6 @@
 #include "scene/property_utils.h"
 #include "scene/resources/packed_scene.h"
 
-static bool _property_path_matches(const String &p_property_path, const String &p_filter, EditorPropertyNameProcessor::Style p_style) {
-	if (p_property_path.findn(p_filter) != -1) {
-		return true;
-	}
-
-	const Vector<String> sections = p_property_path.split("/");
-	for (int i = 0; i < sections.size(); i++) {
-		if (p_filter.is_subsequence_ofi(EditorPropertyNameProcessor::get_singleton()->process_name(sections[i], p_style))) {
-			return true;
-		}
-	}
-	return false;
-}
-
 Size2 EditorProperty::get_minimum_size() const {
 	Size2 ms;
 	Ref<Font> font = get_font("font", "Tree");
@@ -699,7 +685,6 @@ void EditorProperty::_update_pin_flags() {
 }
 
 Control *EditorProperty::make_custom_tooltip(const String &p_text) const {
-	tooltip_text = p_text;
 	EditorHelpBit *help_bit = memnew(EditorHelpBit);
 	help_bit->add_style_override("panel", get_stylebox("panel", "TooltipPanel"));
 	help_bit->get_rich_text()->set_fixed_size_to_width(360 * EDSCALE);
@@ -719,10 +704,6 @@ Control *EditorProperty::make_custom_tooltip(const String &p_text) const {
 	}
 
 	return help_bit;
-}
-
-String EditorProperty::get_tooltip_text() const {
-	return tooltip_text;
 }
 
 void EditorProperty::_bind_methods() {
@@ -751,8 +732,6 @@ void EditorProperty::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_menu_option", "option"), &EditorProperty::_menu_option);
 	ClassDB::bind_method(D_METHOD("_unhandled_key_input"), &EditorProperty::_unhandled_key_input);
 	ClassDB::bind_method(D_METHOD("_focusable_focused"), &EditorProperty::_focusable_focused);
-
-	ClassDB::bind_method(D_METHOD("get_tooltip_text"), &EditorProperty::get_tooltip_text);
 
 	ClassDB::bind_method(D_METHOD("add_focusable", "control"), &EditorProperty::add_focusable);
 	ClassDB::bind_method(D_METHOD("set_bottom_editor", "editor"), &EditorProperty::set_bottom_editor);
@@ -965,21 +944,22 @@ void EditorInspectorCategory::_notification(int p_what) {
 		if (icon.is_valid()) {
 			w += hs + icon->get_width();
 		}
+		w = MIN(w, get_size().width - hs * 2);
 
 		int ofs = (get_size().width - w) / 2;
 
 		if (icon.is_valid()) {
 			draw_texture(icon, Point2(ofs, (get_size().height - icon->get_height()) / 2).floor());
 			ofs += hs + icon->get_width();
+			w -= hs + icon->get_width();
 		}
 
 		Color color = get_color("font_color", "Tree");
-		draw_string(font, Point2(ofs, font->get_ascent() + (get_size().height - font->get_height()) / 2).floor(), label, color, get_size().width);
+		draw_string(font, Point2(ofs, font->get_ascent() + (get_size().height - font->get_height()) / 2).floor(), label, color, w);
 	}
 }
 
 Control *EditorInspectorCategory::make_custom_tooltip(const String &p_text) const {
-	tooltip_text = p_text;
 	EditorHelpBit *help_bit = memnew(EditorHelpBit);
 	help_bit->add_style_override("panel", get_stylebox("panel", "TooltipPanel"));
 	help_bit->get_rich_text()->set_fixed_size_to_width(360 * EDSCALE);
@@ -1015,14 +995,6 @@ Size2 EditorInspectorCategory::get_minimum_size() const {
 	return ms;
 }
 
-void EditorInspectorCategory::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("get_tooltip_text"), &EditorInspectorCategory::get_tooltip_text);
-}
-
-String EditorInspectorCategory::get_tooltip_text() const {
-	return tooltip_text;
-}
-
 EditorInspectorCategory::EditorInspectorCategory() {
 }
 
@@ -1036,28 +1008,38 @@ void EditorInspectorSection::_test_unfold() {
 	}
 }
 
+Ref<Texture> EditorInspectorSection::_get_arrow() {
+	Ref<Texture> arrow;
+	if (foldable) {
+		if (object->editor_is_section_unfolded(section)) {
+			arrow = get_icon("arrow", "Tree");
+		} else {
+			arrow = get_icon("arrow_collapsed", "Tree");
+		}
+	}
+	return arrow;
+}
+
+int EditorInspectorSection::_get_header_height() {
+	Ref<Font> font = get_font("font", "Tree");
+
+	int header_height = font->get_height();
+	Ref<Texture> arrow = _get_arrow();
+	if (arrow.is_valid()) {
+		header_height = MAX(header_height, arrow->get_height());
+	}
+	header_height += get_constant("vseparation", "Tree");
+
+	return header_height;
+}
+
 void EditorInspectorSection::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_SORT_CHILDREN: {
-			Ref<Font> font = get_font("font", "Tree");
-			Ref<Texture> arrow;
-
-			if (foldable) {
-				if (object->editor_is_section_unfolded(section)) {
-					arrow = get_icon("arrow", "Tree");
-				} else {
-					arrow = get_icon("arrow_collapsed", "Tree");
-				}
-			}
-
 			Size2 size = get_size();
 			Point2 offset;
-			offset.y = font->get_height();
-			if (arrow.is_valid()) {
-				offset.y = MAX(offset.y, arrow->get_height());
-			}
 
-			offset.y += get_constant("vseparation", "Tree");
+			offset.y = _get_header_height();
 			offset.x += get_constant("inspector_margin", "Editor");
 
 			Rect2 rect(offset, size - offset);
@@ -1082,23 +1064,7 @@ void EditorInspectorSection::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_DRAW: {
-			Ref<Texture> arrow;
-
-			if (foldable) {
-				if (object->editor_is_section_unfolded(section)) {
-					arrow = get_icon("arrow", "Tree");
-				} else {
-					arrow = get_icon("arrow_collapsed", "Tree");
-				}
-			}
-
-			Ref<Font> font = get_font("font", "Tree");
-
-			int h = font->get_height();
-			if (arrow.is_valid()) {
-				h = MAX(h, arrow->get_height());
-			}
-			h += get_constant("vseparation", "Tree");
+			int h = _get_header_height();
 
 			Rect2 header_rect = Rect2(Vector2(), Vector2(get_size().width, h));
 			Color c = bg_color;
@@ -1110,8 +1076,10 @@ void EditorInspectorSection::_notification(int p_what) {
 
 			const int arrow_margin = 3;
 			Color color = get_color("font_color", "Tree");
+			Ref<Font> font = get_font("font", "Tree");
 			draw_string(font, Point2(Math::round((16 + arrow_margin) * EDSCALE), font->get_ascent() + (h - font->get_height()) / 2).floor(), label, color, get_size().width);
 
+			Ref<Texture> arrow = _get_arrow();
 			if (arrow.is_valid()) {
 				draw_texture(arrow, Point2(Math::round(arrow_margin * EDSCALE), (h - arrow->get_height()) / 2).floor());
 			}
@@ -1177,8 +1145,7 @@ void EditorInspectorSection::_gui_input(const Ref<InputEvent> &p_event) {
 
 	Ref<InputEventMouseButton> mb = p_event;
 	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == BUTTON_LEFT) {
-		Ref<Font> font = get_font("font", "Tree");
-		if (mb->get_position().y > font->get_height()) { //clicked outside
+		if (mb->get_position().y >= _get_header_height()) {
 			return;
 		}
 
@@ -1252,6 +1219,20 @@ EditorInspectorSection::~EditorInspectorSection() {
 
 Ref<EditorInspectorPlugin> EditorInspector::inspector_plugins[MAX_PLUGINS];
 int EditorInspector::inspector_plugin_count = 0;
+
+bool EditorInspector::_property_path_matches(const String &p_property_path, const String &p_filter, EditorPropertyNameProcessor::Style p_style) {
+	if (p_property_path.findn(p_filter) != -1) {
+		return true;
+	}
+
+	const Vector<String> sections = p_property_path.split("/");
+	for (int i = 0; i < sections.size(); i++) {
+		if (p_filter.is_subsequence_ofi(EditorPropertyNameProcessor::get_singleton()->process_name(sections[i], p_style))) {
+			return true;
+		}
+	}
+	return false;
+}
 
 EditorProperty *EditorInspector::instantiate_property_editor(Object *p_object, Variant::Type p_type, const String &p_path, PropertyHint p_hint, const String &p_hint_text, int p_usage) {
 	for (int i = inspector_plugin_count - 1; i >= 0; i--) {
@@ -1671,7 +1652,10 @@ void EditorInspector::update_tree() {
 			StringName classname = object->get_class_name();
 			if (object_class != String()) {
 				classname = object_class;
+			} else if (Object::cast_to<MultiNodeEdit>(object)) {
+				classname = Object::cast_to<MultiNodeEdit>(object)->get_edited_class_name();
 			}
+
 			StringName propname = property_prefix + p.name;
 			String descr;
 			bool found = false;
@@ -2349,6 +2333,7 @@ void EditorInspector::_bind_methods() {
 	ClassDB::bind_method("_object_id_selected", &EditorInspector::_object_id_selected);
 	ClassDB::bind_method("_vscroll_changed", &EditorInspector::_vscroll_changed);
 	ClassDB::bind_method("_feature_profile_changed", &EditorInspector::_feature_profile_changed);
+	ClassDB::bind_method("get_edited_object", &EditorInspector::get_edited_object);
 
 	ClassDB::bind_method("refresh", &EditorInspector::refresh);
 

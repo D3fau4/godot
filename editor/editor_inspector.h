@@ -108,8 +108,6 @@ private:
 	Control *bottom_editor;
 	PopupMenu *menu;
 
-	mutable String tooltip_text;
-
 	void _update_pin_flags();
 
 protected:
@@ -175,8 +173,6 @@ public:
 	void set_object_and_property(Object *p_object, const StringName &p_property);
 	virtual Control *make_custom_tooltip(const String &p_text) const;
 
-	String get_tooltip_text() const;
-
 	void set_draw_top_bg(bool p_draw) { draw_top_bg = p_draw; }
 
 	bool can_revert_to_default() const { return can_revert; }
@@ -218,17 +214,13 @@ class EditorInspectorCategory : public Control {
 	Ref<Texture> icon;
 	String label;
 	Color bg_color;
-	mutable String tooltip_text;
 
 protected:
 	void _notification(int p_what);
-	static void _bind_methods();
 
 public:
 	virtual Size2 get_minimum_size() const;
 	virtual Control *make_custom_tooltip(const String &p_text) const;
-
-	String get_tooltip_text() const;
 
 	EditorInspectorCategory();
 };
@@ -245,6 +237,8 @@ class EditorInspectorSection : public Container {
 	bool foldable;
 
 	void _test_unfold();
+	int _get_header_height();
+	Ref<Texture> _get_arrow();
 
 protected:
 	void _notification(int p_what);
@@ -325,6 +319,7 @@ class EditorInspector : public ScrollContainer {
 	void _property_keyed_with_value(const String &p_path, const Variant &p_value, bool p_advance);
 	void _property_checked(const String &p_path, bool p_checked);
 	void _property_pinned(const String &p_path, bool p_pinned);
+	bool _property_path_matches(const String &p_property_path, const String &p_filter, EditorPropertyNameProcessor::Style p_style);
 
 	void _resource_selected(const String &p_path, RES p_resource);
 	void _property_selected(const String &p_path, int p_focusable);

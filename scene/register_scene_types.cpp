@@ -62,6 +62,7 @@
 #include "scene/2d/position_2d.h"
 #include "scene/2d/ray_cast_2d.h"
 #include "scene/2d/remote_transform_2d.h"
+#include "scene/2d/shape_cast_2d.h"
 #include "scene/2d/skeleton_2d.h"
 #include "scene/2d/sprite.h"
 #include "scene/2d/tile_map.h"
@@ -193,6 +194,8 @@
 #include "scene/3d/label_3d.h"
 #include "scene/3d/light.h"
 #include "scene/3d/listener.h"
+#include "scene/3d/lod.h"
+#include "scene/3d/merge_group.h"
 #include "scene/3d/mesh_instance.h"
 #include "scene/3d/multimesh_instance.h"
 #include "scene/3d/navigation.h"
@@ -213,6 +216,7 @@
 #include "scene/3d/room.h"
 #include "scene/3d/room_group.h"
 #include "scene/3d/room_manager.h"
+#include "scene/3d/shape_cast.h"
 #include "scene/3d/skeleton.h"
 #include "scene/3d/soft_body.h"
 #include "scene/3d/spring_arm.h"
@@ -438,6 +442,7 @@ void register_scene_types() {
 	ClassDB::register_class<ARVROrigin>();
 	ClassDB::register_class<InterpolatedCamera>();
 	ClassDB::register_class<MeshInstance>();
+	ClassDB::register_class<LOD>();
 	ClassDB::register_class<ImmediateGeometry>();
 	ClassDB::register_virtual_class<SpriteBase3D>();
 	ClassDB::register_class<Sprite3D>();
@@ -463,6 +468,7 @@ void register_scene_types() {
 	ClassDB::register_class<RoomManager>();
 	ClassDB::register_class<Occluder>();
 	ClassDB::register_class<Portal>();
+	ClassDB::register_class<MergeGroup>();
 
 	ClassDB::register_class<RootMotionView>();
 	ClassDB::set_class_enabled("RootMotionView", false); //disabled by default, enabled by editor
@@ -490,6 +496,7 @@ void register_scene_types() {
 	ClassDB::register_class<CollisionShape>();
 	ClassDB::register_class<CollisionPolygon>();
 	ClassDB::register_class<RayCast>();
+	ClassDB::register_class<ShapeCast>();
 	ClassDB::register_class<MultiMeshInstance>();
 
 	ClassDB::register_class<Curve3D>();
@@ -610,6 +617,7 @@ void register_scene_types() {
 	ClassDB::register_class<CollisionShape2D>();
 	ClassDB::register_class<CollisionPolygon2D>();
 	ClassDB::register_class<RayCast2D>();
+	ClassDB::register_class<ShapeCast2D>();
 	ClassDB::register_class<VisibilityNotifier2D>();
 	ClassDB::register_class<VisibilityEnabler2D>();
 	ClassDB::register_class<Polygon2D>();
@@ -661,11 +669,14 @@ void register_scene_types() {
 	ClassDB::register_class<QuadMesh>();
 	ClassDB::register_class<SphereMesh>();
 	ClassDB::register_class<TextMesh>();
+	ClassDB::register_class<TorusMesh>();
 	ClassDB::register_class<PointMesh>();
 	ClassDB::register_virtual_class<Material>();
+	ClassDB::register_virtual_class<Material3D>();
 	ClassDB::register_class<SpatialMaterial>();
-	SceneTree::add_idle_callback(SpatialMaterial::flush_changes);
-	SpatialMaterial::init_shaders();
+	ClassDB::register_class<ORMSpatialMaterial>();
+	SceneTree::add_idle_callback(Material3D::flush_changes);
+	Material3D::init_shaders();
 
 	ClassDB::register_class<MeshLibrary>();
 
@@ -868,7 +879,7 @@ void unregister_scene_types() {
 
 	//SpatialMaterial is not initialised when 3D is disabled, so it shouldn't be cleaned up either
 #ifndef _3D_DISABLED
-	SpatialMaterial::finish_shaders();
+	Material3D::finish_shaders();
 #endif // _3D_DISABLED
 
 	ParticlesMaterial::finish_shaders();

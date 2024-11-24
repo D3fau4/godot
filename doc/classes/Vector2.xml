@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="Vector2" version="3.5" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="Vector2" version="3.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		Vector used for 2D math.
 	</brief_description>
@@ -52,7 +52,7 @@
 			<argument index="0" name="to" type="Vector2" />
 			<description>
 				Returns the angle between the line connecting the two points and the X axis, in radians.
-				[url=https://raw.githubusercontent.com/godotengine/godot-docs/3.5/img/vector2_angle_to_point.png]Illustration of the returned angle.[/url]
+				[url=https://raw.githubusercontent.com/godotengine/godot-docs/3.6/img/vector2_angle_to_point.png]Illustration of the returned angle.[/url]
 			</description>
 		</method>
 		<method name="aspect">
@@ -150,6 +150,13 @@
 			<return type="bool" />
 			<description>
 				Returns [code]true[/code] if the vector is normalized, [code]false[/code] otherwise.
+			</description>
+		</method>
+		<method name="is_zero_approx">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if this vector's values are approximately zero, by running [method @GDScript.is_zero_approx] on each component.
+				This method is faster than using [method is_equal_approx] with one value as a zero vector.
 			</description>
 		</method>
 		<method name="length">

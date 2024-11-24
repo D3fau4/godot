@@ -38,6 +38,7 @@
 #include <jni.h>
 
 #include "core/list.h"
+#include "java_godot_view_wrapper.h"
 #include "string_android.h"
 
 // Class that makes functions in java/src/org/godotengine/godot/Godot.java callable from C++
@@ -47,6 +48,8 @@ private:
 	jobject activity;
 	jclass godot_class;
 	jclass activity_class;
+
+	GodotJavaViewWrapper *godot_view = nullptr;
 
 	jmethodID _on_video_init = nullptr;
 	jmethodID _create_offscreen_gl = nullptr;
@@ -72,6 +75,10 @@ private:
 	jmethodID _on_godot_main_loop_started = nullptr;
 	jmethodID _get_class_loader = nullptr;
 	jmethodID _create_new_godot_instance = nullptr;
+	jmethodID _get_render_view = nullptr;
+	jmethodID _begin_benchmark_measure = nullptr;
+	jmethodID _end_benchmark_measure = nullptr;
+	jmethodID _dump_benchmark = nullptr;
 
 public:
 	GodotJavaWrapper(JNIEnv *p_env, jobject p_activity, jobject p_godot_instance);
@@ -81,6 +88,7 @@ public:
 	jobject get_member_object(const char *p_name, const char *p_class, JNIEnv *p_env = NULL);
 
 	jobject get_class_loader();
+	GodotJavaViewWrapper *get_godot_view();
 
 	bool create_offscreen_gl(JNIEnv *p_env);
 	void destroy_offscreen_gl(JNIEnv *p_env);
@@ -89,7 +97,7 @@ public:
 	void on_godot_setup_completed(JNIEnv *p_env = NULL);
 	void on_godot_main_loop_started(JNIEnv *p_env = NULL);
 	void restart(JNIEnv *p_env = NULL);
-	void force_quit(JNIEnv *p_env = NULL);
+	bool force_quit(JNIEnv *p_env = NULL, int p_instance_id = 0);
 	void set_keep_screen_on(bool p_enabled);
 	void alert(const String &p_message, const String &p_title);
 	int get_gles_version_code();
@@ -107,7 +115,10 @@ public:
 	bool is_activity_resumed();
 	void vibrate(int p_duration_ms);
 	String get_input_fallback_mapping();
-	void create_new_godot_instance(List<String> args);
+	int create_new_godot_instance(List<String> args);
+	void begin_benchmark_measure(const String &p_label);
+	void end_benchmark_measure(const String &p_label);
+	void dump_benchmark(const String &benchmark_file);
 };
 
 #endif // JAVA_GODOT_WRAPPER_H

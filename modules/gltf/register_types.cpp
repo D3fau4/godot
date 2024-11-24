@@ -32,20 +32,10 @@
 
 #include "register_types.h"
 
-#include "gltf_accessor.h"
-#include "gltf_animation.h"
-#include "gltf_buffer_view.h"
-#include "gltf_camera.h"
-#include "gltf_document.h"
-#include "gltf_light.h"
-#include "gltf_mesh.h"
-#include "gltf_node.h"
-#include "gltf_skeleton.h"
-#include "gltf_skin.h"
-#include "gltf_spec_gloss.h"
+#include "extensions/gltf_document_extension.h"
+#include "extensions/gltf_spec_gloss.h"
+#include "extensions/physics/gltf_document_extension_physics.h"
 #include "gltf_state.h"
-#include "gltf_texture.h"
-#include "packed_scene_gltf.h"
 
 #ifdef TOOLS_ENABLED
 #include "editor/editor_node.h"
@@ -60,6 +50,11 @@ static void _editor_init() {
 	ResourceImporterScene::get_singleton()->add_importer(import_gltf);
 }
 #endif
+
+#define GLTF_REGISTER_DOCUMENT_EXTENSION(m_doc_ext_class) \
+	Ref<m_doc_ext_class> extension_##m_doc_ext_class;     \
+	extension_##m_doc_ext_class.instance();               \
+	GLTFDocument::register_gltf_document_extension(extension_##m_doc_ext_class);
 
 void register_gltf_types() {
 #ifdef TOOLS_ENABLED
@@ -77,17 +72,23 @@ void register_gltf_types() {
 	ClassDB::register_class<GLTFAnimation>();
 	ClassDB::register_class<GLTFBufferView>();
 	ClassDB::register_class<GLTFAccessor>();
+	ClassDB::register_class<GLTFCollider>();
 	ClassDB::register_class<GLTFTexture>();
+	ClassDB::register_class<GLTFTextureSampler>();
 	ClassDB::register_class<GLTFSkeleton>();
 	ClassDB::register_class<GLTFSkin>();
 	ClassDB::register_class<GLTFCamera>();
 	ClassDB::register_class<GLTFLight>();
+	ClassDB::register_class<GLTFPhysicsBody>();
 	ClassDB::register_class<GLTFState>();
 	ClassDB::register_class<GLTFDocument>();
+	ClassDB::register_class<GLTFDocumentExtension>();
 	ClassDB::register_class<PackedSceneGLTF>();
+	GLTF_REGISTER_DOCUMENT_EXTENSION(GLTFDocumentExtensionPhysics);
 }
 
 void unregister_gltf_types() {
+	GLTFDocument::unregister_all_gltf_document_extensions();
 }
 
 #endif // _3D_DISABLED

@@ -5,7 +5,7 @@ on:
 # Global Settings
 env:
   # Only used for the cache key. Increment version to force clean build.
-  GODOT_BASE_BRANCH: 3.5
+  GODOT_BASE_BRANCH: 3.6
   SCONSFLAGS: verbose=yes warnings=all werror=yes
 
 concurrency:
@@ -40,6 +40,22 @@ jobs:
             # Skip 2GiB artifact speeding up action.
             artifact: false
 
+          - name: Template w/ Mono (target=release, tools=no)
+            cache-name: linux-template-mono
+            target: release
+            tools: false
+            sconsflags: module_mono_enabled=yes mono_static=yes mono_glue=no debug_symbols=no
+            build-mono: false
+            artifact: true
+
+          - name: Minimal template (target=release, tools=no, everything disabled)
+            cache-name: linux-template-minimal
+            target: release
+            tools: false
+            sconsflags: modules_enabled_by_default=no disable_3d=yes disable_advanced_gui=yes deprecated=no minizip=no debug_symbols=no
+            build-mono: false
+            artifact: false
+
     steps:
       - uses: actions/checkout@v4
 
@@ -52,7 +68,8 @@ jobs:
           # The actual dependencies.
           sudo apt-get install --no-install-recommends build-essential pkg-config libx11-dev \
               libxcursor-dev libxinerama-dev libgl1-mesa-dev libglu-dev libasound2-dev \
-              libpulse-dev libdbus-1-dev libudev-dev libxi-dev libxrandr-dev yasm xvfb wget unzip
+              libpulse-dev libdbus-1-dev libudev-dev libxi-dev libxrandr-dev yasm xvfb wget unzip \
+              libspeechd-dev speech-dispatcher
 
       - name: Free disk space on runner
         run: |
@@ -106,9 +123,9 @@ jobs:
       - name: Download test project
         if: ${{ matrix.test }}
         run: |
-          wget https://github.com/godotengine/regression-test-project/archive/3.5.zip
-          unzip 3.5.zip
-          mv "regression-test-project-3.5" "test_project"
+          wget https://github.com/godotengine/regression-test-project/archive/3.6.zip
+          unzip 3.6.zip
+          mv "regression-test-project-3.6" "test_project"
 
       # Editor is quite complicated piece of software, so it is easy to introduce bug here
       - name: Open and close editor

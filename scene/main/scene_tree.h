@@ -42,6 +42,7 @@
 class PackedScene;
 class Node;
 class SceneTreeTween;
+class ShortCut;
 class Spatial;
 class Viewport;
 class Material;
@@ -163,7 +164,11 @@ private:
 	void _update_font_oversampling(float p_ratio);
 	void _update_root_rect();
 
-	List<ObjectID> delete_queue;
+	struct DeleteQueueElement {
+		ObjectID id;
+		int32_t child_list_id;
+	};
+	LocalVector<DeleteQueueElement> delete_queue;
 
 	Map<UGCall, Vector<Variant>> unique_group_calls;
 	bool ugc_locked;
@@ -172,6 +177,7 @@ private:
 	_FORCE_INLINE_ void _update_group_order(Group &g, bool p_use_priority = false);
 
 	Array _get_nodes_in_group(const StringName &p_group);
+	Node *_get_first_node_in_group(const StringName &p_group);
 
 	Node *current_scene;
 
@@ -230,6 +236,9 @@ private:
 	SelfList<Node>::List xform_change_list;
 
 	friend class ScriptDebuggerRemote;
+
+	Ref<ShortCut> debugger_stop_shortcut;
+
 #ifdef DEBUG_ENABLED
 
 	Map<int, NodePath> live_edit_node_path_cache;
@@ -305,6 +314,7 @@ public:
 	virtual void input_event(const Ref<InputEvent> &p_event);
 	virtual void init();
 
+	virtual void iteration_prepare();
 	virtual bool iteration(float p_time);
 	virtual void iteration_end();
 	virtual bool idle(float p_time);

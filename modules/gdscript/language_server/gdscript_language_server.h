@@ -46,12 +46,14 @@ class GDScriptLanguageServer : public EditorPlugin {
 	bool use_thread;
 	String host;
 	int port;
+	int poll_limit_usec = 100000;
 	static void thread_main(void *p_userdata);
 
 private:
 	void _notification(int p_what);
 
 public:
+	static int port_override;
 	GDScriptLanguageServer();
 	void start();
 	void stop();

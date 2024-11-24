@@ -237,10 +237,10 @@ vec4 apply_fxaa(vec4 color, vec2 uv_interp, vec2 pixel_size) {
 	const float FXAA_SPAN_MAX = 8.0;
 	const vec3 luma = vec3(0.299, 0.587, 0.114);
 
-	vec4 rgbNW = texture2DLod(source, uv_interp + vec2(-1.0, -1.0) * pixel_size, 0.0);
-	vec4 rgbNE = texture2DLod(source, uv_interp + vec2(1.0, -1.0) * pixel_size, 0.0);
-	vec4 rgbSW = texture2DLod(source, uv_interp + vec2(-1.0, 1.0) * pixel_size, 0.0);
-	vec4 rgbSE = texture2DLod(source, uv_interp + vec2(1.0, 1.0) * pixel_size, 0.0);
+	vec4 rgbNW = texture2DLod(source, uv_interp + vec2(-0.5, -0.5) * pixel_size, 0.0);
+	vec4 rgbNE = texture2DLod(source, uv_interp + vec2(0.5, -0.5) * pixel_size, 0.0);
+	vec4 rgbSW = texture2DLod(source, uv_interp + vec2(-0.5, 0.5) * pixel_size, 0.0);
+	vec4 rgbSE = texture2DLod(source, uv_interp + vec2(0.5, 0.5) * pixel_size, 0.0);
 	vec3 rgbM = color.rgb;
 
 #ifdef DISABLE_ALPHA
@@ -376,9 +376,9 @@ void main() {
 	color.rgb = apply_color_correction(color.rgb, color_correction);
 #endif
 
-	gl_FragColor = color;
-
 #ifdef DISABLE_ALPHA
-	gl_FragColor.a = 1.0;
+	color.a = 1.0;
 #endif
+
+	gl_FragColor = color;
 }

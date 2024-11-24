@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="Portal" inherits="Spatial" version="3.5" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="Portal" inherits="Spatial" version="3.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		Portal nodes are used to enable visibility between [Room]s.
 	</brief_description>
@@ -18,10 +18,14 @@
 			<argument index="1" name="position" type="Vector2" />
 			<description>
 				Sets individual points. Primarily for use by the editor.
+				[b]Note:[/b] This function will not resize the point array. Set [member points] to set the number of points.
 			</description>
 		</method>
 	</methods>
 	<members>
+		<member name="include_in_bound" type="bool" setter="set_include_in_bound" getter="get_include_in_bound" default="false">
+			When a manual bound has not been explicitly specified for a [Room], the convex hull bound will be estimated from the geometry of the objects within the room. This setting determines whether the portal geometry is included in this estimate of the room bound.
+		</member>
 		<member name="linked_room" type="NodePath" setter="set_linked_room" getter="get_linked_room" default="NodePath(&quot;&quot;)">
 			This is a shortcut for setting the linked [Room] in the name of the [Portal] (the name is used during conversion).
 		</member>

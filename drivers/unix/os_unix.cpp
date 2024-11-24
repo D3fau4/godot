@@ -49,7 +49,6 @@
 #include <sys/sysctl.h>
 #endif
 
-#include <assert.h>
 #include <dlfcn.h>
 #include <errno.h>
 #include <poll.h>
@@ -86,10 +85,6 @@ static void _setup_clock() {
 	_clock_start = ((uint64_t)tv_now.tv_nsec / 1000L) + (uint64_t)tv_now.tv_sec * 1000000L;
 }
 #endif
-
-void OS_Unix::debug_break() {
-	assert(false);
-};
 
 static void handle_interrupt(int sig) {
 	if (ScriptDebugger::get_singleton() == nullptr) {
@@ -141,15 +136,11 @@ void OS_Unix::alert(const String &p_alert, const String &p_title) {
 	fprintf(stderr, "ALERT: %s: %s\n", p_title.utf8().get_data(), p_alert.utf8().get_data());
 }
 
-String OS_Unix::get_stdin_string(bool p_block) {
-	if (p_block) {
-		char buff[1024];
-		String ret = stdin_buf + fgets(buff, 1024, stdin);
-		stdin_buf = "";
-		return ret;
-	}
-
-	return "";
+String OS_Unix::get_stdin_string() {
+	char buff[1024];
+	String ret = stdin_buf + fgets(buff, 1024, stdin);
+	stdin_buf = "";
+	return ret;
 }
 
 String OS_Unix::get_name() const {
@@ -458,10 +449,6 @@ String OS_Unix::get_environment(const String &p_var) const {
 
 bool OS_Unix::set_environment(const String &p_var, const String &p_value) const {
 	return setenv(p_var.utf8().get_data(), p_value.utf8().get_data(), /* overwrite: */ true) == 0;
-}
-
-int OS_Unix::get_processor_count() const {
-	return sysconf(_SC_NPROCESSORS_CONF);
 }
 
 String OS_Unix::get_user_data_dir() const {

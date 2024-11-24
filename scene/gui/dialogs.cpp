@@ -106,6 +106,8 @@ bool WindowDialog::has_point(const Point2 &p_point) const {
 }
 
 void WindowDialog::_gui_input(const Ref<InputEvent> &p_event) {
+	ERR_FAIL_COND(p_event.is_null());
+
 	Ref<InputEventMouseButton> mb = p_event;
 
 	if (mb.is_valid() && mb->get_button_index() == BUTTON_LEFT) {
@@ -204,6 +206,7 @@ void WindowDialog::_notification(int p_what) {
 			int font_height = title_font->get_height() - title_font->get_descent() * 2;
 			int x = (size.x - title_font->get_string_size(xl_title).x) / 2;
 			int y = (-title_height + font_height) / 2;
+			select_font(title_font);
 			title_font->draw(canvas, Point2(x, y), xl_title, title_color, size.x - panel->get_minimum_size().x);
 		} break;
 

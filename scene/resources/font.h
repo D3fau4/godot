@@ -34,6 +34,7 @@
 #include "core/map.h"
 #include "core/resource.h"
 #include "scene/resources/texture.h"
+#include "servers/visual/visual_server_canvas_helper.h"
 
 class Font : public Resource {
 	GDCLASS(Font, Resource);
@@ -52,10 +53,12 @@ public:
 
 	virtual float get_ascent() const = 0;
 	virtual float get_descent() const = 0;
+	virtual int get_spacing_char() const = 0;
 
 	virtual Size2 get_char_size(CharType p_char, CharType p_next = 0) const = 0;
 	Size2 get_string_size(const String &p_string) const;
 	Size2 get_wordwrap_string_size(const String &p_string, float p_width) const;
+	Size2 total_size_of_lines(Vector<String> p_lines);
 
 	virtual bool is_distance_field_hint() const = 0;
 
@@ -63,7 +66,8 @@ public:
 	void draw_halign(RID p_canvas_item, const Point2 &p_pos, HAlign p_align, float p_width, const String &p_text, const Color &p_modulate = Color(1, 1, 1), const Color &p_outline_modulate = Color(1, 1, 1)) const;
 
 	virtual bool has_outline() const { return false; }
-	virtual float draw_char(RID p_canvas_item, const Point2 &p_pos, CharType p_char, CharType p_next = 0, const Color &p_modulate = Color(1, 1, 1), bool p_outline = false) const = 0;
+	float draw_char(RID p_canvas_item, const Point2 &p_pos, CharType p_char, CharType p_next = 0, const Color &p_modulate = Color(1, 1, 1), bool p_outline = false) const { return draw_char_ex(p_canvas_item, p_pos, p_char, p_next, p_modulate, p_outline); }
+	virtual float draw_char_ex(RID p_canvas_item, const Point2 &p_pos, CharType p_char, CharType p_next = 0, const Color &p_modulate = Color(1, 1, 1), bool p_outline = false, MultiRect *p_multirect = nullptr) const = 0;
 
 	virtual RID get_char_texture(CharType p_char, CharType p_next, bool p_outline) const = 0;
 	virtual Size2 get_char_texture_size(CharType p_char, CharType p_next, bool p_outline) const = 0;
@@ -83,6 +87,7 @@ class FontDrawer {
 	const Ref<Font> &font;
 	Color outline_color;
 	bool has_outline;
+	MultiRect multirect;
 
 	struct PendingDraw {
 		RID canvas_item;
@@ -95,26 +100,19 @@ class FontDrawer {
 	Vector<PendingDraw> pending_draws;
 
 public:
-	FontDrawer(const Ref<Font> &p_font, const Color &p_outline_color) :
-			font(p_font),
-			outline_color(p_outline_color) {
-		has_outline = p_font->has_outline();
-	}
+	FontDrawer(const Ref<Font> &p_font, const Color &p_outline_color);
 
 	float draw_char(RID p_canvas_item, const Point2 &p_pos, CharType p_char, CharType p_next = 0, const Color &p_modulate = Color(1, 1, 1)) {
 		if (has_outline) {
 			PendingDraw draw = { p_canvas_item, p_pos, p_char, p_next, p_modulate };
 			pending_draws.push_back(draw);
 		}
-		return font->draw_char(p_canvas_item, p_pos, p_char, p_next, has_outline ? outline_color : p_modulate, has_outline);
+		return font->draw_char_ex(p_canvas_item, p_pos, p_char, p_next, has_outline ? outline_color : p_modulate, has_outline, &multirect);
 	}
+	MultiRect &get_multirect() { return multirect; }
+	void flush();
 
-	~FontDrawer() {
-		for (int i = 0; i < pending_draws.size(); ++i) {
-			const PendingDraw &draw = pending_draws[i];
-			font->draw_char(draw.canvas_item, draw.pos, draw.chr, draw.next, draw.modulate, false);
-		}
-	}
+	~FontDrawer();
 };
 
 class BitmapFont : public Font {
@@ -178,6 +176,9 @@ public:
 	void set_ascent(float p_ascent);
 	float get_ascent() const;
 	float get_descent() const;
+	int get_spacing_char() const {
+		return 0;
+	}
 
 	void add_texture(const Ref<Texture> &p_texture);
 	void add_char(int32_t p_char, int p_texture_idx, const Rect2 &p_rect, const Size2 &p_align, float p_advance = -1);
@@ -203,7 +204,7 @@ public:
 	void set_distance_field_hint(bool p_distance_field);
 	bool is_distance_field_hint() const;
 
-	float draw_char(RID p_canvas_item, const Point2 &p_pos, CharType p_char, CharType p_next = 0, const Color &p_modulate = Color(1, 1, 1), bool p_outline = false) const;
+	float draw_char_ex(RID p_canvas_item, const Point2 &p_pos, CharType p_char, CharType p_next = 0, const Color &p_modulate = Color(1, 1, 1), bool p_outline = false, MultiRect *p_multirect = nullptr) const;
 
 	RID get_char_texture(CharType p_char, CharType p_next, bool p_outline) const;
 	Size2 get_char_texture_size(CharType p_char, CharType p_next, bool p_outline) const;
@@ -218,7 +219,7 @@ public:
 
 class ResourceFormatLoaderBMFont : public ResourceFormatLoader {
 public:
-	virtual RES load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr);
+	virtual RES load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_no_subresource_cache = false);
 	virtual void get_recognized_extensions(List<String> *p_extensions) const;
 	virtual bool handles_type(const String &p_type) const;
 	virtual String get_resource_type(const String &p_path) const;

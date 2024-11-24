@@ -110,6 +110,9 @@ GDScriptInstance *GDScript::_create_instance(const Variant **p_args, int p_argco
 	instances.insert(instance->owner);
 	GDScriptLanguage::singleton->lock.unlock();
 
+	if (p_argcount < 0) {
+		return instance;
+	}
 	initializer->call(instance, p_args, p_argcount, r_error);
 
 	if (r_error.error != Variant::CallError::CALL_OK) {
@@ -123,9 +126,8 @@ GDScriptInstance *GDScript::_create_instance(const Variant **p_args, int p_argco
 		GDScriptLanguage::singleton->lock.unlock();
 #endif
 
-		ERR_FAIL_COND_V(r_error.error != Variant::CallError::CALL_OK, nullptr); //error constructing
+		ERR_FAIL_V_MSG(nullptr, "Error constructing a GDScriptInstance.");
 	}
-
 	//@TODO make thread safe
 	return instance;
 }
@@ -221,11 +223,15 @@ void GDScript::get_script_method_list(List<MethodInfo> *p_list) const {
 			GDScriptFunction *func = E->get();
 			MethodInfo mi;
 			mi.name = E->key();
-			for (int i = 0; i < func->get_argument_count(); i++) {
-				mi.arguments.push_back(func->get_argument_type(i));
-			}
-
 			mi.return_val = func->get_return_type();
+			for (int i = 0; i < func->get_argument_count(); i++) {
+				PropertyInfo arginfo = func->get_argument_type(i);
+				arginfo.name = func->get_argument_name(i);
+				mi.arguments.push_back(arginfo);
+			}
+			for (int i = 0; i < func->get_default_argument_count(); i++) {
+				mi.default_arguments.push_back(func->get_default_argument_value(i));
+			}
 			p_list->push_back(mi);
 		}
 
@@ -274,11 +280,15 @@ MethodInfo GDScript::get_method_info(const StringName &p_method) const {
 	GDScriptFunction *func = E->get();
 	MethodInfo mi;
 	mi.name = E->key();
-	for (int i = 0; i < func->get_argument_count(); i++) {
-		mi.arguments.push_back(func->get_argument_type(i));
-	}
-
 	mi.return_val = func->get_return_type();
+	for (int i = 0; i < func->get_argument_count(); i++) {
+		PropertyInfo arginfo = func->get_argument_type(i);
+		arginfo.name = func->get_argument_name(i);
+		mi.arguments.push_back(arginfo);
+	}
+	for (int i = 0; i < func->get_default_argument_count(); i++) {
+		mi.default_arguments.push_back(func->get_default_argument_value(i));
+	}
 	return mi;
 }
 
@@ -1164,11 +1174,18 @@ void GDScriptInstance::get_method_list(List<MethodInfo> *p_list) const {
 	const GDScript *sptr = script.ptr();
 	while (sptr) {
 		for (Map<StringName, GDScriptFunction *>::Element *E = sptr->member_functions.front(); E; E = E->next()) {
+			GDScriptFunction *func = E->get();
 			MethodInfo mi;
 			mi.name = E->key();
+			mi.return_val = func->get_return_type();
 			mi.flags |= METHOD_FLAG_FROM_SCRIPT;
 			for (int i = 0; i < E->get()->get_argument_count(); i++) {
-				mi.arguments.push_back(PropertyInfo(Variant::NIL, "arg" + itos(i)));
+				PropertyInfo arginfo = func->get_argument_type(i);
+				arginfo.name = func->get_argument_name(i);
+				mi.arguments.push_back(arginfo);
+			}
+			for (int i = 0; i < func->get_default_argument_count(); i++) {
+				mi.default_arguments.push_back(func->get_default_argument_value(i));
 			}
 			p_list->push_back(mi);
 		}
@@ -2093,6 +2110,8 @@ GDScriptWarning::Code GDScriptWarning::get_code_from_name(const String &p_name) 
 #endif // DEBUG_ENABLED
 
 GDScriptLanguage::GDScriptLanguage() {
+	GDScriptTokenizer::initialize();
+
 	calls = 0;
 	ERR_FAIL_COND(singleton);
 	singleton = this;
@@ -2130,13 +2149,15 @@ GDScriptLanguage::GDScriptLanguage() {
 	GLOBAL_DEF("debug/gdscript/completion/autocomplete_setters_and_getters", false);
 	for (int i = 0; i < (int)GDScriptWarning::WARNING_MAX; i++) {
 		String warning = GDScriptWarning::get_name_from_code((GDScriptWarning::Code)i).to_lower();
-		bool default_enabled = !warning.begins_with("unsafe_") && i != GDScriptWarning::UNUSED_CLASS_VARIABLE;
+		bool default_enabled = !warning.begins_with("unsafe_") && i != GDScriptWarning::UNUSED_CLASS_VARIABLE && i != GDScriptWarning::RETURN_VALUE_DISCARDED;
 		GLOBAL_DEF("debug/gdscript/warnings/" + warning, default_enabled);
 	}
 #endif // DEBUG_ENABLED
 }
 
 GDScriptLanguage::~GDScriptLanguage() {
+	GDScriptTokenizer::terminate();
+
 	if (_call_stack) {
 		memdelete_arr(_call_stack);
 	}
@@ -2189,7 +2210,7 @@ Ref<GDScript> GDScriptLanguage::get_orphan_subclass(const String &p_qualified_na
 
 /*************** RESOURCE ***************/
 
-RES ResourceFormatLoaderGDScript::load(const String &p_path, const String &p_original_path, Error *r_error) {
+RES ResourceFormatLoaderGDScript::load(const String &p_path, const String &p_original_path, Error *r_error, bool p_no_subresource_cache) {
 	if (r_error) {
 		*r_error = ERR_FILE_CANT_OPEN;
 	}

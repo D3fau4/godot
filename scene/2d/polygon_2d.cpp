@@ -96,6 +96,15 @@ void Polygon2D::_skeleton_bone_setup_changed() {
 
 void Polygon2D::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE: {
+			// Must re-establish any existing links with skeletons on re-entering the tree.
+			update();
+		} break;
+		case NOTIFICATION_EXIT_TREE: {
+			// Always detach skeleton when exiting the tree, so skeletons don't inform
+			// Polygon2Ds outside the tree that they have moved (this would be useless work).
+			VS::get_singleton()->canvas_item_attach_skeleton(get_canvas_item(), RID());
+		} break;
 		case NOTIFICATION_DRAW: {
 			if (polygon.size() < 3) {
 				return;
@@ -111,6 +120,16 @@ void Polygon2D::_notification(int p_what) {
 			if (skeleton_node) {
 				VS::get_singleton()->canvas_item_attach_skeleton(get_canvas_item(), skeleton_node->get_skeleton());
 				new_skeleton_id = skeleton_node->get_instance_id();
+
+				// Sync the offset transform between the Polygon2D and the skeleton.
+				// This is needed for accurate culling in VisualServer.
+				Transform2D global_xform_skel = skeleton_node->get_global_transform();
+				Transform2D global_xform_poly = get_global_transform();
+
+				// find the difference
+				Transform2D global_xform_offset = global_xform_skel.affine_inverse() * global_xform_poly;
+				VS::get_singleton()->canvas_item_set_skeleton_relative_xform(get_canvas_item(), global_xform_offset);
+
 			} else {
 				VS::get_singleton()->canvas_item_attach_skeleton(get_canvas_item(), RID());
 			}
@@ -617,13 +636,16 @@ void Polygon2D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "color"), "set_color", "get_color");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "offset"), "set_offset", "get_offset");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "antialiased"), "set_antialiased", "get_antialiased");
+
 	ADD_GROUP("Texture", "");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "texture", PROPERTY_HINT_RESOURCE_TYPE, "Texture"), "set_texture", "get_texture");
+
 	ADD_GROUP("Texture", "texture_");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "texture_offset"), "set_texture_offset", "get_texture_offset");
-	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "texture_scale"), "set_texture_scale", "get_texture_scale");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "texture_scale", PROPERTY_HINT_LINK), "set_texture_scale", "get_texture_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "texture_rotation_degrees", PROPERTY_HINT_RANGE, "-360,360,0.1,or_lesser,or_greater"), "set_texture_rotation_degrees", "get_texture_rotation_degrees");
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "texture_rotation", PROPERTY_HINT_NONE, "", 0), "set_texture_rotation", "get_texture_rotation");
+
 	ADD_GROUP("Skeleton", "");
 	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "skeleton", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Skeleton2D"), "set_skeleton", "get_skeleton");
 
@@ -651,4 +673,12 @@ Polygon2D::Polygon2D() {
 	rect_cache_dirty = true;
 	internal_vertices = 0;
 	current_skeleton_id = 0;
+}
+
+Polygon2D::~Polygon2D() {
+	// Most definitely don't want to leave references to this deleted canvas item
+	// in the skeleton.
+	if (get_canvas_item().is_valid()) {
+		VS::get_singleton()->canvas_item_attach_skeleton(get_canvas_item(), RID());
+	}
 }

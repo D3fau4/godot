@@ -1,6 +1,7 @@
 import os
 import platform
 import sys
+from methods import get_compiler_version, using_gcc
 
 # This file is mostly based on platform/x11/detect.py.
 # If editing this file, make sure to apply relevant changes here too.
@@ -31,6 +32,7 @@ def get_opts():
     from SCons.Variables import BoolVariable, EnumVariable
 
     return [
+        EnumVariable("linker", "Linker program", "default", ("default", "bfd", "gold", "lld", "mold")),
         BoolVariable("use_llvm", "Use the LLVM compiler", False),
         BoolVariable("use_static_cpp", "Link libgcc and libstdc++ statically for better portability", True),
         BoolVariable("use_ubsan", "Use LLVM/GCC compiler undefined behavior sanitizer (UBSAN)", False),
@@ -49,7 +51,6 @@ def get_flags():
 
 
 def configure(env):
-
     ## Build type
 
     if env["target"] == "release":
@@ -74,11 +75,24 @@ def configure(env):
         env.Prepend(CCFLAGS=["-g3"])
         env.Append(LINKFLAGS=["-rdynamic"])
 
+    if env["debug_symbols"]:
+        # Adding dwarf-4 explicitly makes stacktraces work with clang builds,
+        # otherwise addr2line doesn't understand them
+        env.Append(CCFLAGS=["-gdwarf-4"])
+
     ## Architecture
 
-    is64 = sys.maxsize > 2**32
+    # Cross-compilation
+    # TODO: Support cross-compilation on architectures other than x86.
+    host_is_64_bit = sys.maxsize > 2**32
     if env["bits"] == "default":
-        env["bits"] = "64" if is64 else "32"
+        env["bits"] = "64" if host_is_64_bit else "32"
+    if host_is_64_bit and (env["bits"] == "32" or env["arch"] == "x86"):
+        env.Append(CCFLAGS=["-m32"])
+        env.Append(LINKFLAGS=["-m32"])
+    elif not host_is_64_bit and (env["bits"] == "64" or env["arch"] == "x86_64"):
+        env.Append(CCFLAGS=["-m64"])
+        env.Append(LINKFLAGS=["-m64"])
 
     if env["arch"] == "" and platform.machine() == "riscv64":
         env["arch"] = "rv64"
@@ -100,6 +114,27 @@ def configure(env):
         env.extra_suffix = ".llvm" + env.extra_suffix
         env.Append(LIBS=["atomic"])
 
+    # Linker
+    if env["linker"] != "default":
+        print("Using linker program: " + env["linker"])
+        if env["linker"] == "mold" and using_gcc(env):  # GCC < 12.1 doesn't support -fuse-ld=mold.
+            cc_semver = tuple(get_compiler_version(env))
+            if cc_semver < (12, 1):
+                found_wrapper = False
+                for path in ["/usr/libexec", "/usr/local/libexec", "/usr/lib", "/usr/local/lib"]:
+                    if os.path.isfile(path + "/mold/ld"):
+                        env.Append(LINKFLAGS=["-B" + path + "/mold"])
+                        found_wrapper = True
+                        break
+                if not found_wrapper:
+                    print("Couldn't locate mold installation path. Make sure it's installed in /usr or /usr/local.")
+                    sys.exit(255)
+            else:
+                env.Append(LINKFLAGS=["-fuse-ld=mold"])
+        else:
+            env.Append(LINKFLAGS=["-fuse-ld=%s" % env["linker"]])
+
+    # Sanitizers
     if env["use_ubsan"] or env["use_asan"] or env["use_lsan"] or env["use_tsan"] or env["use_msan"]:
         env.extra_suffix += "s"
 
@@ -123,18 +158,26 @@ def configure(env):
             env.Append(CCFLAGS=["-fsanitize=memory"])
             env.Append(LINKFLAGS=["-fsanitize=memory"])
 
-    if env["use_lto"]:
-        env.Append(CCFLAGS=["-flto"])
-        if not env["use_llvm"] and env.GetOption("num_jobs") > 1:
+    # LTO
+    if env["lto"] != "none":
+        if env["lto"] == "thin":
+            if not env["use_llvm"]:
+                print("ThinLTO is only compatible with LLVM, use `use_llvm=yes` or `lto=full`.")
+                sys.exit(255)
+            env.Append(CCFLAGS=["-flto=thin"])
+            env.Append(LINKFLAGS=["-flto=thin"])
+        elif not env["use_llvm"] and env.GetOption("num_jobs") > 1:
+            env.Append(CCFLAGS=["-flto"])
             env.Append(LINKFLAGS=["-flto=" + str(env.GetOption("num_jobs"))])
         else:
+            env.Append(CCFLAGS=["-flto"])
             env.Append(LINKFLAGS=["-flto"])
+
         if not env["use_llvm"]:
             env["RANLIB"] = "gcc-ranlib"
             env["AR"] = "gcc-ar"
 
     env.Append(CCFLAGS=["-pipe"])
-    env.Append(LINKFLAGS=["-pipe"])
 
     ## Dependencies
 
@@ -229,10 +272,8 @@ def configure(env):
     if not env["builtin_pcre2"]:
         env.ParseConfig("pkg-config libpcre2-32 --cflags --libs")
 
-    # Embree is only compatible with x86_64. Yet another unreliable hack that will break
-    # cross-compilation, this will really need to be handle better. Thankfully only affects
-    # people who disable builtin_embree (likely distro packagers).
-    if env["tools"] and not env["builtin_embree"] and (is64 and platform.machine() == "x86_64"):
+    # Embree is only used in tools build on x86_64 and aarch64.
+    if env["tools"] and not env["builtin_embree"] and host_is_64_bit:
         # No pkgconfig file so far, hardcode expected lib name.
         env.Append(LIBS=["embree3"])
 

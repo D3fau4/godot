@@ -1,13 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    package="org.godotengine.editor"
     android:installLocation="auto">
 
     <supports-screens
         android:largeScreens="true"
         android:normalScreens="true"
-        android:smallScreens="true"
+        android:smallScreens="false"
         android:xlargeScreens="true" />
 
     <uses-feature
@@ -21,12 +20,15 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="29"/>
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:allowBackup="false"
         android:icon="@mipmap/icon"
         android:label="@string/godot_editor_name_string"
         tools:ignore="GoogleAppIndexingWarning"
+        android:theme="@style/GodotEditorTheme"
         android:requestLegacyExternalStorage="true">
 
         <activity
@@ -35,7 +37,6 @@
             android:launchMode="singleTask"
             android:screenOrientation="userLandscape"
             android:exported="true"
-            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
             android:process=":GodotProjectManager">
 
             <layout android:defaultHeight="@dimen/editor_default_window_height"
@@ -53,8 +54,7 @@
             android:process=":GodotEditor"
             android:launchMode="singleTask"
             android:screenOrientation="userLandscape"
-            android:exported="false"
-            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+            android:exported="false">
             <layout android:defaultHeight="@dimen/editor_default_window_height"
                 android:defaultWidth="@dimen/editor_default_window_width" />
         </activity>
@@ -66,8 +66,7 @@
             android:process=":GodotGame"
             android:launchMode="singleTask"
             android:exported="false"
-            android:screenOrientation="userLandscape"
-            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+            android:screenOrientation="userLandscape">
             <layout android:defaultHeight="@dimen/editor_default_window_height"
                 android:defaultWidth="@dimen/editor_default_window_width" />
         </activity>

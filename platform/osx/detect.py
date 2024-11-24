@@ -43,9 +43,9 @@ def configure(env):
 
     if env["target"] == "release":
         if env["optimize"] == "speed":  # optimize for speed (default)
-            env.Prepend(CCFLAGS=["-O3", "-fomit-frame-pointer", "-ftree-vectorize"])
+            env.Prepend(CCFLAGS=["-O3"])
         elif env["optimize"] == "size":  # optimize for size
-            env.Prepend(CCFLAGS=["-Os", "-ftree-vectorize"])
+            env.Prepend(CCFLAGS=["-Os"])
         if env["arch"] != "arm64":
             env.Prepend(CCFLAGS=["-msse2"])
 
@@ -79,12 +79,21 @@ def configure(env):
 
     if env["arch"] == "arm64":
         print("Building for macOS 11.0+, platform arm64.")
+        env.Append(ASFLAGS=["-arch", "arm64", "-mmacosx-version-min=11.0"])
         env.Append(CCFLAGS=["-arch", "arm64", "-mmacosx-version-min=11.0"])
         env.Append(LINKFLAGS=["-arch", "arm64", "-mmacosx-version-min=11.0"])
     else:
-        print("Building for macOS 10.12+, platform x86-64.")
-        env.Append(CCFLAGS=["-arch", "x86_64", "-mmacosx-version-min=10.12"])
-        env.Append(LINKFLAGS=["-arch", "x86_64", "-mmacosx-version-min=10.12"])
+        print("Building for macOS 10.13+, platform x86-64.")
+        env.Append(ASFLAGS=["-arch", "x86_64", "-mmacosx-version-min=10.13"])
+        env.Append(CCFLAGS=["-arch", "x86_64", "-mmacosx-version-min=10.13"])
+        env.Append(LINKFLAGS=["-arch", "x86_64", "-mmacosx-version-min=10.13"])
+
+    cc_version = get_compiler_version(env) or [-1, -1]
+    vanilla = is_vanilla_clang(env)
+
+    # Workaround for Xcode 15 linker bug.
+    if not vanilla and cc_version[0] == 15 and cc_version[1] == 0:
+        env.Prepend(LINKFLAGS=["-ld_classic"])
 
     cc_version = get_compiler_version(env) or [-1, -1]
     vanilla = is_vanilla_clang(env)
@@ -131,6 +140,21 @@ def configure(env):
         env["RANLIB"] = basecmd + "ranlib"
         env["AS"] = basecmd + "as"
         env.Append(CPPDEFINES=["__MACPORTS__"])  # hack to fix libvpx MM256_BROADCASTSI128_SI256 define
+
+    # LTO
+
+    if env["lto"] == "auto":  # LTO benefits for macOS (size, performance) haven't been clearly established yet.
+        env["lto"] = "none"
+
+    if env["lto"] != "none":
+        if env["lto"] == "thin":
+            env.Append(CCFLAGS=["-flto=thin"])
+            env.Append(LINKFLAGS=["-flto=thin"])
+        else:
+            env.Append(CCFLAGS=["-flto"])
+            env.Append(LINKFLAGS=["-flto"])
+
+    # Sanitizers
 
     if env["use_ubsan"] or env["use_asan"] or env["use_lsan"] or env["use_tsan"]:
         env.extra_suffix += "s"

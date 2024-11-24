@@ -8,19 +8,20 @@ readability.
 ## brotli
 
 - Upstream: https://github.com/google/brotli
-- Version: git (f4153a09f87cbb9c826d8fc12c74642bb2d879ea, 2022)
+- Version: 1.1.0 (ed738e842d2fbdf2d6459e39267a633c4a9b2f5d, 2023)
 - License: MIT
 
 Files extracted from upstream source:
 
-- `common/`, `dec/` and `include/` folders
+- `common/`, `dec/` and `include/` folders from `c/`,
+  minus the `dictionary.bin*` files
 - `LICENSE`
 
 
 ## bullet
 
 - Upstream: https://github.com/bulletphysics/bullet3
-- Version: 3.24 (7dee3436e747958e7088dfdcea0e4ae031ce619e, 2022)
+- Version: 3.25 (2c204c49e56ed15ec5fcfa71d199ab6d6570b3f5, 2022)
 - License: zlib
 
 Files extracted from upstream source:
@@ -28,8 +29,6 @@ Files extracted from upstream source:
 - `src/*` minus `Bullet3*`, `BulletInverseDynamics` and `clew` folders,
   and CMakeLists.txt and premake4.lua files
 - `LICENSE.txt`, and `VERSION` as `VERSION.txt`
-
-Includes some patches in the `patches` folder which have been sent upstream.
 
 
 ## certs
@@ -58,7 +57,7 @@ Files extracted from upstream source:
 ## embree
 
 - Upstream: https://github.com/embree/embree
-- Version: 3.13.0 (7c53133eb21424f7f0ae1e25bf357e358feaf6ab, 2021)
+- Version: 3.13.5 (698442324ccddd11725fb8875275dc1384f7fb40, 2022)
 - License: Apache 2.0
 
 Files extracted from upstream:
@@ -77,8 +76,8 @@ commits.
 
 ## enet
 
-- Upstream: http://enet.bespin.org
-- Version: git (ea4607a90dbfbcf4da2669ea998585253d8e70b1, 2023)
+- Upstream: https://github.com/lsalzman/enet
+- Version: git (c44b7d0f7ff21edb702745e4c019d0537928c373, 2024)
 - License: MIT
 
 Files extracted from upstream source:
@@ -316,14 +315,14 @@ Files extracted from upstream repository:
 ## miniupnpc
 
 - Upstream: https://github.com/miniupnp/miniupnp
-- Version: 2.2.5 (58837ef586278d18cbebee50be758835ed4be79a, 2023)
+- Version: 2.2.7 (d4d5ec7d48c093b37b2ea5d7171ede21ce9d7ff2, 2024)
 - License: BSD-3-Clause
 
 Files extracted from upstream source:
 
 - Copy `miniupnpc/src` and `miniupnpc/include` to `thirdparty/miniupnpc`
 - Remove the following test or sample files:
-  `listdevices.c minihttptestserver.c miniupnpcmodule.c upnpc.c upnperrors.* test*`
+  `listdevices.c,minihttptestserver.c,miniupnpcmodule.c,upnpc.c,upnperrors.*,test*`
 - `LICENSE`
 
 The only modified file is `src/miniupnpcstrings.h`, which was created for Godot
@@ -406,7 +405,7 @@ Collection of single-file libraries used in Godot components.
 ## nanosvg
 
 - Upstream: https://github.com/memononen/nanosvg
-- Version: git (f0a3e1034dd22e2e87e5db22401e44998383124e, 2022)
+- Version: git (93ce879dc4c04a3ef1758428ec80083c38610b1f, 2023)
 - License: zlib
 
 Files extracted from the upstream source:
@@ -469,7 +468,7 @@ Files extracted from upstream source:
 ## pcre2
 
 - Upstream: http://www.pcre.org
-- Version: 10.40 (3103b8f20a3b9944b177e812fde29fbfb8b90558, 2022)
+- Version: 10.42 (52c08847921a324c804cabf2814549f50bce1265, 2022)
 - License: BSD-3-Clause
 
 Files extracted from upstream source:
@@ -501,7 +500,7 @@ Files extracted from upstream source:
 ## recastnavigation
 
 - Upstream: https://github.com/recastnavigation/recastnavigation
-- Version: git (4fef0446609b23d6ac180ed822817571525528a1, 2022)
+- Version: 1.6.0 (6dc1667f580357e8a2154c28b7867bea7e8ad3a7, 2023)
 - License: zlib
 
 Files extracted from upstream source:
@@ -575,7 +574,7 @@ folder.
 ## wslay
 
 - Upstream: https://github.com/tatsuhiro-t/wslay
-- Version: 1.1.1+git (45d22583b488f79d5a4e598cc7675c191c5ab53f, 2021)
+- Version: 1.1.1+git (0e7d106ff89ad6638090fd811a9b2e4c5dda8d40, 2022)
 - License: MIT
 
 File extracted from upstream release tarball:
@@ -592,7 +591,7 @@ File extracted from upstream release tarball:
 ## xatlas
 
 - Upstream: https://github.com/jpcy/xatlas
-- Version: git (16ace528acd2cf1f16a7c0dde99c42c486488dbe, 2022)
+- Version: git (f700c7790aaa030e794b52ba7791a05c085faf0c, 2022)
 - License: MIT
 
 Files extracted from upstream source:
@@ -616,7 +615,7 @@ Files extracted from upstream source:
 ## zstd
 
 - Upstream: https://github.com/facebook/zstd
-- Version: 1.5.0 (a488ba114ec17ea1054b9057c26a046fc122b3b6, 2021)
+- Version: 1.5.5 (63779c798237346c2b245c546c40b72a5a5913fe, 2023)
 - License: BSD-3-Clause
 
 Files extracted from upstream source:

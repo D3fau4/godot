@@ -30,6 +30,21 @@
 
 #include "transform_interpolator.h"
 
+#include "core/math/transform_2d.h"
+
+void TransformInterpolator::interpolate_transform_2d(const Transform2D &p_prev, const Transform2D &p_curr, Transform2D &r_result, real_t p_fraction) {
+	// Special case for physics interpolation, if flipping, don't interpolate basis.
+	// If the determinant polarity changes, the handedness of the coordinate system changes.
+	if (_sign(p_prev.determinant()) != _sign(p_curr.determinant())) {
+		r_result.elements[0] = p_curr.elements[0];
+		r_result.elements[1] = p_curr.elements[1];
+		r_result.set_origin(Vector2::linear_interpolate(p_prev.get_origin(), p_curr.get_origin(), p_fraction));
+		return;
+	}
+
+	r_result = p_prev.interpolate_with(p_curr, p_fraction);
+}
+
 void TransformInterpolator::interpolate_transform(const Transform &p_prev, const Transform &p_curr, Transform &r_result, real_t p_fraction) {
 	r_result.origin = p_prev.origin + ((p_curr.origin - p_prev.origin) * p_fraction);
 	interpolate_basis(p_prev.basis, p_curr.basis, r_result.basis, p_fraction);

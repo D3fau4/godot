@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="Performance" inherits="Object" version="3.5" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="Performance" inherits="Object" version="3.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		Exposes performance-related data.
 	</brief_description>
@@ -114,7 +114,7 @@
 			Number of islands in the 3D physics engine.
 		</constant>
 		<constant name="AUDIO_OUTPUT_LATENCY" value="30" enum="Monitor">
-			Output latency of the [AudioServer].
+			Output latency of the [AudioServer]. Equivalent to calling [method AudioServer.get_output_latency], it is not recommended to call this every frame.
 		</constant>
 		<constant name="MONITOR_MAX" value="31" enum="Monitor">
 			Represents the size of the [enum Monitor] enum.

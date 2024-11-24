@@ -227,7 +227,7 @@ static const char *APK_ASSETS_DIRECTORY = "res://android/build/assets";
 static const char *AAB_ASSETS_DIRECTORY = "res://android/build/assetPacks/installTime/src/main/assets";
 
 static const int DEFAULT_MIN_SDK_VERSION = 19; // Should match the value in 'platform/android/java/app/config.gradle#minSdk'
-static const int DEFAULT_TARGET_SDK_VERSION = 33; // Should match the value in 'platform/android/java/app/config.gradle#targetSdk'
+static const int DEFAULT_TARGET_SDK_VERSION = 34; // Should match the value in 'platform/android/java/app/config.gradle#targetSdk'
 
 #ifndef ANDROID_ENABLED
 void EditorExportPlatformAndroid::_check_for_changes_poll_thread(void *ud) {
@@ -2013,6 +2013,15 @@ Ref<Texture> EditorExportPlatformAndroid::get_run_icon() const {
 	return run_icon;
 }
 
+String EditorExportPlatformAndroid::get_java_path() {
+	String exe_ext = "";
+	if (OS::get_singleton()->get_name() == "Windows") {
+		exe_ext = ".exe";
+	}
+	String java_sdk_path = EditorSettings::get_singleton()->get("export/android/java_sdk_path");
+	return java_sdk_path.plus_file("bin/java" + exe_ext);
+}
+
 String EditorExportPlatformAndroid::get_adb_path() {
 	String exe_ext = "";
 	if (OS::get_singleton()->get_name() == "Windows") {
@@ -2062,7 +2071,7 @@ String EditorExportPlatformAndroid::get_apksigner_path() {
 	return apksigner_path;
 }
 
-bool EditorExportPlatformAndroid::can_export(const Ref<EditorExportPreset> &p_preset, String &r_error, bool &r_missing_templates) const {
+bool EditorExportPlatformAndroid::has_valid_export_configuration(const Ref<EditorExportPreset> &p_preset, String &r_error, bool &r_missing_templates) const {
 	String err;
 	bool valid = false;
 	const bool custom_build_enabled = p_preset->get("custom_build/use_custom_build");
@@ -2110,7 +2119,7 @@ bool EditorExportPlatformAndroid::can_export(const Ref<EditorExportPreset> &p_pr
 		valid = installed_android_build_template && !r_missing_templates;
 	}
 
-	// Validate the rest of the configuration.
+	// Validate the rest of the export configuration.
 
 	String dk = p_preset->get("keystore/debug");
 	String dk_user = p_preset->get("keystore/debug_user");
@@ -2141,6 +2150,32 @@ bool EditorExportPlatformAndroid::can_export(const Ref<EditorExportPreset> &p_pr
 	if (!rk.empty() && !FileAccess::exists(rk)) {
 		valid = false;
 		err += TTR("Release keystore incorrectly configured in the export preset.") + "\n";
+	}
+
+	String java_sdk_path = EditorSettings::get_singleton()->get("export/android/java_sdk_path");
+	if (java_sdk_path == "") {
+		err += TTR("A valid Java SDK path is required in Editor Settings.") + "\n";
+		valid = false;
+	} else {
+		// Validate the given path by checking that `java` is present under the `bin` directory.
+		Error errn;
+		// Check for the bin directory.
+		DirAccessRef da = DirAccess::open(java_sdk_path.plus_file("bin"), &errn);
+		if (errn != OK) {
+			err += TTR("Invalid Java SDK path in Editor Settings.");
+			err += TTR("Missing 'bin' directory!");
+			err += "\n";
+			valid = false;
+		} else {
+			// Check for the `java` command.
+			String java_path = get_java_path();
+			if (!FileAccess::exists(java_path)) {
+				err += TTR("Unable to find 'java' command using the Java SDK path.");
+				err += TTR("Please check the Java SDK directory specified in Editor Settings.");
+				err += "\n";
+				valid = false;
+			}
+		}
 	}
 
 	String sdk_path = EditorSettings::get_singleton()->get("export/android/android_sdk_path");
@@ -2186,6 +2221,19 @@ bool EditorExportPlatformAndroid::can_export(const Ref<EditorExportPreset> &p_pr
 		}
 	}
 
+	if (!err.empty()) {
+		r_error = err;
+	}
+
+	return valid;
+}
+
+bool EditorExportPlatformAndroid::has_valid_project_configuration(const Ref<EditorExportPreset> &p_preset, String &r_error) const {
+	String err;
+	bool valid = true;
+	const bool custom_build_enabled = p_preset->get("custom_build/use_custom_build");
+
+	// Validate the project configuration.
 	bool apk_expansion = p_preset->get("apk_expansion/enable");
 
 	if (apk_expansion) {
@@ -2252,8 +2300,7 @@ bool EditorExportPlatformAndroid::can_export(const Ref<EditorExportPreset> &p_pr
 		}
 	}
 
-	if (int(p_preset->get("custom_build/export_format")) == EXPORT_FORMAT_AAB &&
-			!custom_build_enabled) {
+	if (int(p_preset->get("custom_build/export_format")) == EXPORT_FORMAT_AAB && !custom_build_enabled) {
 		valid = false;
 		err += TTR("\"Export AAB\" is only valid when \"Use Custom Build\" is enabled.");
 		err += "\n";
@@ -2311,7 +2358,9 @@ bool EditorExportPlatformAndroid::can_export(const Ref<EditorExportPreset> &p_pr
 		err += "\n";
 	}
 
-	r_error = err;
+	if (!err.empty()) {
+		r_error = err;
+	}
 	return valid;
 }
 
@@ -2918,6 +2967,10 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 			}
 		}
 		const String assets_directory = get_assets_directory(p_preset, export_format);
+		String java_sdk_path = EDITOR_GET("export/android/java_sdk_path");
+		ERR_FAIL_COND_V_MSG(java_sdk_path.empty(), ERR_UNCONFIGURED, "Java SDK path must be configured in Editor Settings at 'export/android/java_sdk_path'.");
+		print_verbose("Java sdk path: " + java_sdk_path);
+
 		String sdk_path = EDITOR_GET("export/android/android_sdk_path");
 		ERR_FAIL_COND_V_MSG(sdk_path.empty(), ERR_UNCONFIGURED, "Android SDK path must be configured in Editor Settings at 'export/android/android_sdk_path'.");
 		print_verbose("Android sdk path: " + sdk_path);
@@ -2962,8 +3015,11 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		print_verbose("Storing command line flags..");
 		store_file_at_path(assets_directory + "/_cl_", command_line_flags);
 
+		print_verbose("Updating JAVA_HOME environment to " + java_sdk_path);
+		OS::get_singleton()->set_environment("JAVA_HOME", java_sdk_path);
+
 		print_verbose("Updating ANDROID_HOME environment to " + sdk_path);
-		OS::get_singleton()->set_environment("ANDROID_HOME", sdk_path); //set and overwrite if required
+		OS::get_singleton()->set_environment("ANDROID_HOME", sdk_path);
 		String build_command;
 
 #ifdef WINDOWS_ENABLED
@@ -2997,6 +3053,7 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		bool clean_build_required = is_clean_build_required(enabled_plugins);
 
 		List<String> cmdline;
+		cmdline.push_back("validateJavaVersion");
 		if (clean_build_required) {
 			cmdline.push_back("clean");
 		}

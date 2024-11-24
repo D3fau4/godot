@@ -469,7 +469,9 @@ void ScriptTextEditor::set_edit_state(const Variant &p_state) {
 	}
 
 	if (editor_enabled) {
+#ifndef ANDROID_ENABLED
 		ensure_focus();
+#endif
 	}
 }
 
@@ -1428,6 +1430,10 @@ void ScriptTextEditor::_bind_methods() {
 
 Control *ScriptTextEditor::get_edit_menu() {
 	return edit_hb;
+}
+
+Control *ScriptTextEditor::get_code_editor_text_edit() {
+	return code_editor->get_text_edit();
 }
 
 void ScriptTextEditor::clear_edit_menu() {

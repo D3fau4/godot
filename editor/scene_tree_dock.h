@@ -156,7 +156,13 @@ class SceneTreeDock : public VBoxContainer {
 	EditorSubScene *import_subscene_dialog;
 	EditorFileDialog *new_scene_from_dialog;
 
+	enum FilterMenuItems {
+		FILTER_BY_TYPE = 64, // Used in the same menus as the Tool enum.
+		FILTER_BY_GROUP,
+	};
+
 	LineEdit *filter;
+	PopupMenu *filter_quick_menu;
 	TextureRect *filter_icon;
 
 	PopupMenu *menu;
@@ -240,8 +246,12 @@ class SceneTreeDock : public VBoxContainer {
 	void _quick_open();
 
 	void _tree_rmb(const Vector2 &p_menu_pos);
+	void _update_filter_menu();
 
 	void _filter_changed(const String &p_filter);
+	void _filter_gui_input(const Ref<InputEvent> &p_event);
+	void _filter_option_selected(int option);
+	void _append_filter_options_to(PopupMenu *p_menu, bool p_include_separator = true);
 
 	void _perform_instance_scenes(const Vector<String> &p_files, Node *parent, int p_pos);
 	void _replace_with_branch_scene(const String &p_file, Node *base);
@@ -291,6 +301,7 @@ public:
 	void show_tab_buttons();
 	void hide_tab_buttons();
 
+	void add_root_node(Node *p_node);
 	void replace_node(Node *p_node, Node *p_by_node, bool p_keep_properties = true, bool p_remove_old = true);
 
 	void attach_script_to_selected(bool p_extend);

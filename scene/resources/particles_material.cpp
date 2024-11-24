@@ -659,9 +659,14 @@ void ParticlesMaterial::_update_shader() {
 	}
 	//scale by scale
 	code += "	float base_scale = tex_scale * mix(scale, 1.0, scale_random * scale_rand);\n";
-	code += "	if (base_scale < 0.000001) {\n";
-	code += "		base_scale = 0.000001;\n";
+
+	// Prevent zero scale (which can cause rendering issues).
+	code += "	if (base_scale >= 0.0) {\n";
+	code += "		base_scale = max(base_scale, 0.000001);\n";
+	code += "	} else {\n";
+	code += "		base_scale = min(base_scale, -0.000001);\n";
 	code += "	}\n";
+
 	if (trail_size_modifier.is_valid()) {
 		code += "	if (trail_divisor > 1) {\n";
 		code += "		base_scale *= textureLod(trail_size_modifier, vec2(float(int(NUMBER) % trail_divisor) / float(trail_divisor - 1), 0.0), 0.0).r;\n";
@@ -1307,7 +1312,7 @@ void ParticlesMaterial::_bind_methods() {
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "angle_random", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_param_randomness", "get_param_randomness", PARAM_ANGLE);
 	ADD_PROPERTYI(PropertyInfo(Variant::OBJECT, "angle_curve", PROPERTY_HINT_RESOURCE_TYPE, "CurveTexture"), "set_param_texture", "get_param_texture", PARAM_ANGLE);
 	ADD_GROUP("Scale", "");
-	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "scale", PROPERTY_HINT_RANGE, "0,1000,0.01,or_greater"), "set_param", "get_param", PARAM_SCALE);
+	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "scale", PROPERTY_HINT_RANGE, "-1000,1000,0.01,or_greater"), "set_param", "get_param", PARAM_SCALE);
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "scale_random", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_param_randomness", "get_param_randomness", PARAM_SCALE);
 	ADD_PROPERTYI(PropertyInfo(Variant::OBJECT, "scale_curve", PROPERTY_HINT_RESOURCE_TYPE, "CurveTexture"), "set_param_texture", "get_param_texture", PARAM_SCALE);
 	ADD_GROUP("Color", "");
@@ -1323,8 +1328,8 @@ void ParticlesMaterial::_bind_methods() {
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "anim_speed", PROPERTY_HINT_RANGE, "0,128,0.01,or_greater"), "set_param", "get_param", PARAM_ANIM_SPEED);
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "anim_speed_random", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_param_randomness", "get_param_randomness", PARAM_ANIM_SPEED);
 	ADD_PROPERTYI(PropertyInfo(Variant::OBJECT, "anim_speed_curve", PROPERTY_HINT_RESOURCE_TYPE, "CurveTexture"), "set_param_texture", "get_param_texture", PARAM_ANIM_SPEED);
-	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "anim_offset", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_param", "get_param", PARAM_ANIM_OFFSET);
-	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "anim_offset_random", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_param_randomness", "get_param_randomness", PARAM_ANIM_OFFSET);
+	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "anim_offset", PROPERTY_HINT_RANGE, "0,1,0.0001"), "set_param", "get_param", PARAM_ANIM_OFFSET);
+	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "anim_offset_random", PROPERTY_HINT_RANGE, "0,1,0.0001"), "set_param_randomness", "get_param_randomness", PARAM_ANIM_OFFSET);
 	ADD_PROPERTYI(PropertyInfo(Variant::OBJECT, "anim_offset_curve", PROPERTY_HINT_RESOURCE_TYPE, "CurveTexture"), "set_param_texture", "get_param_texture", PARAM_ANIM_OFFSET);
 
 	BIND_ENUM_CONSTANT(PARAM_INITIAL_LINEAR_VELOCITY);

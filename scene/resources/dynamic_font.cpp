@@ -35,6 +35,7 @@
 
 #include "core/os/file_access.h"
 #include "core/os/os.h"
+#include "servers/visual/visual_server_canvas_helper.h"
 
 #include FT_STROKER_H
 
@@ -328,6 +329,7 @@ void DynamicFontAtSize::set_texture_flags(uint32_t p_flags) {
 	texture_flags = p_flags;
 	for (int i = 0; i < textures.size(); i++) {
 		Ref<ImageTexture> &tex = textures.write[i].texture;
+		textures.write[i].dirty = true;
 		if (!tex.is_null()) {
 			tex->set_flags(p_flags);
 		}
@@ -358,6 +360,17 @@ RID DynamicFontAtSize::get_char_texture(CharType p_char, CharType p_next, const 
 		ERR_FAIL_COND_V(ch->texture_idx < -1 || ch->texture_idx >= font->textures.size(), RID());
 
 		if (ch->texture_idx != -1) {
+			if (font->textures[ch->texture_idx].dirty) {
+				ShelfPackTexture &tex = font->textures.write[ch->texture_idx];
+				Ref<Image> img = memnew(Image(tex.texture_size, tex.texture_size, 0, tex.format, tex.imgdata));
+				if (tex.texture.is_null()) {
+					tex.texture.instance();
+					tex.texture->create_from_image(img, Texture::FLAG_VIDEO_SURFACE | texture_flags);
+				} else {
+					tex.texture->set_data(img); //update
+				}
+				tex.dirty = false;
+			}
 			return font->textures[ch->texture_idx].texture->get_rid();
 		}
 	}
@@ -388,6 +401,17 @@ Size2 DynamicFontAtSize::get_char_texture_size(CharType p_char, CharType p_next,
 		ERR_FAIL_COND_V(ch->texture_idx < -1 || ch->texture_idx >= font->textures.size(), Size2());
 
 		if (ch->texture_idx != -1) {
+			if (font->textures[ch->texture_idx].dirty) {
+				ShelfPackTexture &tex = font->textures.write[ch->texture_idx];
+				Ref<Image> img = memnew(Image(tex.texture_size, tex.texture_size, 0, tex.format, tex.imgdata));
+				if (tex.texture.is_null()) {
+					tex.texture.instance();
+					tex.texture->create_from_image(img, Texture::FLAG_VIDEO_SURFACE | texture_flags);
+				} else {
+					tex.texture->set_data(img); //update
+				}
+				tex.dirty = false;
+			}
 			return font->textures[ch->texture_idx].texture->get_size();
 		}
 	}
@@ -475,7 +499,7 @@ Rect2 DynamicFontAtSize::get_char_tx_uv_rect(CharType p_char, CharType p_next, c
 	return Rect2();
 }
 
-float DynamicFontAtSize::draw_char(RID p_canvas_item, const Point2 &p_pos, CharType p_char, CharType p_next, const Color &p_modulate, const Vector<Ref<DynamicFontAtSize>> &p_fallbacks, bool p_advance_only, bool p_outline) const {
+float DynamicFontAtSize::draw_char(RID p_canvas_item, const Point2 &p_pos, CharType p_char, CharType p_next, const Color &p_modulate, const Vector<Ref<DynamicFontAtSize>> &p_fallbacks, bool p_advance_only, bool p_outline, MultiRect *p_multirect) const {
 	if (!valid) {
 		return 0;
 	}
@@ -518,6 +542,17 @@ float DynamicFontAtSize::draw_char(RID p_canvas_item, const Point2 &p_pos, CharT
 		ERR_FAIL_COND_V(ch->texture_idx < -1 || ch->texture_idx >= font->textures.size(), 0);
 
 		if (!p_advance_only && ch->texture_idx != -1) {
+			if (font->textures[ch->texture_idx].dirty) {
+				ShelfPackTexture &tex = font->textures.write[ch->texture_idx];
+				Ref<Image> img = memnew(Image(tex.texture_size, tex.texture_size, 0, tex.format, tex.imgdata));
+				if (tex.texture.is_null()) {
+					tex.texture.instance();
+					tex.texture->create_from_image(img, Texture::FLAG_VIDEO_SURFACE | texture_flags);
+				} else {
+					tex.texture->set_data(img); //update
+				}
+				tex.dirty = false;
+			}
 			Point2 cpos = p_pos;
 			cpos.x += ch->h_align;
 			cpos.y -= font->get_ascent();
@@ -527,7 +562,11 @@ float DynamicFontAtSize::draw_char(RID p_canvas_item, const Point2 &p_pos, CharT
 				modulate.r = modulate.g = modulate.b = 1.0;
 			}
 			RID texture = font->textures[ch->texture_idx].texture->get_rid();
-			VisualServer::get_singleton()->canvas_item_add_texture_rect_region(p_canvas_item, Rect2(cpos, ch->rect.size), texture, ch->rect_uv, modulate, false, RID(), false);
+			if (p_multirect) {
+				p_multirect->add_rect(p_canvas_item, Rect2(cpos, ch->rect.size), texture, ch->rect_uv, modulate, false, RID(), false);
+			} else {
+				VisualServer::get_singleton()->canvas_item_add_texture_rect_region(p_canvas_item, Rect2(cpos, ch->rect.size), texture, ch->rect_uv, modulate, false, RID(), false);
+			}
 		}
 
 		advance = ch->advance;
@@ -595,57 +634,29 @@ DynamicFontAtSize::Character DynamicFontAtSize::Character::not_found() {
 	return ch;
 }
 
-DynamicFontAtSize::TexturePosition DynamicFontAtSize::_find_texture_pos_for_glyph(int p_color_size, Image::Format p_image_format, int p_width, int p_height) {
-	TexturePosition ret;
-	ret.index = -1;
-	ret.x = 0;
-	ret.y = 0;
+DynamicFontAtSize::FontTexturePosition DynamicFontAtSize::_find_texture_pos_for_glyph(int p_color_size, Image::Format p_image_format, int p_width, int p_height) {
+	FontTexturePosition ret;
 
 	int mw = p_width;
 	int mh = p_height;
 
-	for (int i = 0; i < textures.size(); i++) {
-		const CharTexture &ct = textures[i];
-
-		if (ct.texture->get_format() != p_image_format) {
+	ShelfPackTexture *ct = textures.ptrw();
+	for (int32_t i = 0; i < textures.size(); i++) {
+		if (ct[i].format != p_image_format) {
+			continue;
+		}
+		if (mw > ct[i].texture_size || mh > ct[i].texture_size) { // Too big for this texture.
 			continue;
 		}
 
-		if (mw > ct.texture_size || mh > ct.texture_size) { //too big for this texture
-			continue;
+		ret = ct[i].pack_rect(i, mh, mw);
+		if (ret.index != -1) {
+			break;
 		}
-
-		ret.y = 0x7FFFFFFF;
-		ret.x = 0;
-
-		for (int j = 0; j < ct.texture_size - mw; j++) {
-			int max_y = 0;
-
-			for (int k = j; k < j + mw; k++) {
-				int y = ct.offsets[k];
-				if (y > max_y) {
-					max_y = y;
-				}
-			}
-
-			if (max_y < ret.y) {
-				ret.y = max_y;
-				ret.x = j;
-			}
-		}
-
-		if (ret.y == 0x7FFFFFFF || ret.y + mh > ct.texture_size) {
-			continue; //fail, could not fit it here
-		}
-
-		ret.index = i;
-		break;
 	}
 
 	if (ret.index == -1) {
 		//could not find texture to fit, create one
-		ret.x = 0;
-		ret.y = 0;
 
 		int texsize = MAX(id.size * oversampling * 8, 256);
 		if (mw > texsize) {
@@ -659,8 +670,8 @@ DynamicFontAtSize::TexturePosition DynamicFontAtSize::_find_texture_pos_for_glyp
 
 		texsize = MIN(texsize, 4096);
 
-		CharTexture tex;
-		tex.texture_size = texsize;
+		ShelfPackTexture tex = ShelfPackTexture(texsize);
+		tex.format = p_image_format;
 		tex.imgdata.resize(texsize * texsize * p_color_size); //grayscale alpha
 
 		{
@@ -684,13 +695,9 @@ DynamicFontAtSize::TexturePosition DynamicFontAtSize::_find_texture_pos_for_glyp
 				}
 			}
 		}
-		tex.offsets.resize(texsize);
-		for (int i = 0; i < texsize; i++) { //zero offsets
-			tex.offsets.write[i] = 0;
-		}
-
 		textures.push_back(tex);
-		ret.index = textures.size() - 1;
+		int32_t idx = textures.size() - 1;
+		ret = textures.write[idx].pack_rect(idx, mh, mw);
 	}
 
 	return ret;
@@ -709,13 +716,13 @@ DynamicFontAtSize::Character DynamicFontAtSize::_bitmap_to_character(FT_Bitmap b
 	int color_size = bitmap.pixel_mode == FT_PIXEL_MODE_BGRA ? 4 : 2;
 	Image::Format require_format = color_size == 4 ? Image::FORMAT_RGBA8 : Image::FORMAT_LA8;
 
-	TexturePosition tex_pos = _find_texture_pos_for_glyph(color_size, require_format, mw, mh);
+	FontTexturePosition tex_pos = _find_texture_pos_for_glyph(color_size, require_format, mw, mh);
 	ERR_FAIL_COND_V(tex_pos.index < 0, Character::not_found());
 
 	//fit character in char texture
 
-	CharTexture &tex = textures.write[tex_pos.index];
-
+	ShelfPackTexture &tex = textures.write[tex_pos.index];
+	tex.dirty = true;
 	{
 		PoolVector<uint8_t>::Write wr = tex.imgdata.write();
 
@@ -748,24 +755,6 @@ DynamicFontAtSize::Character DynamicFontAtSize::_bitmap_to_character(FT_Bitmap b
 				}
 			}
 		}
-	}
-
-	//blit to image and texture
-	{
-		Ref<Image> img = memnew(Image(tex.texture_size, tex.texture_size, 0, require_format, tex.imgdata));
-
-		if (tex.texture.is_null()) {
-			tex.texture.instance();
-			tex.texture->create_from_image(img, Texture::FLAG_VIDEO_SURFACE | texture_flags);
-		} else {
-			tex.texture->set_data(img); //update
-		}
-	}
-
-	// update height array
-
-	for (int k = tex_pos.x; k < tex_pos.x + mw; k++) {
-		tex.offsets.write[k] = tex_pos.y + mh;
 	}
 
 	Character chr;
@@ -1044,6 +1033,10 @@ int DynamicFont::get_spacing(int p_type) const {
 	return 0;
 }
 
+int DynamicFont::get_spacing_char() const {
+	return spacing_char;
+}
+
 void DynamicFont::set_spacing(int p_type, int p_value) {
 	if (p_type == SPACING_TOP) {
 		spacing_top = p_value;
@@ -1203,7 +1196,7 @@ Rect2 DynamicFont::get_char_tx_uv_rect(CharType p_char, CharType p_next, bool p_
 	}
 }
 
-float DynamicFont::draw_char(RID p_canvas_item, const Point2 &p_pos, CharType p_char, CharType p_next, const Color &p_modulate, bool p_outline) const {
+float DynamicFont::draw_char_ex(RID p_canvas_item, const Point2 &p_pos, CharType p_char, CharType p_next, const Color &p_modulate, bool p_outline, MultiRect *p_multirect) const {
 	if (!data_at_size.is_valid()) {
 		return 0;
 	}
@@ -1215,11 +1208,11 @@ float DynamicFont::draw_char(RID p_canvas_item, const Point2 &p_pos, CharType p_
 
 	if (p_outline) {
 		if (outline_data_at_size.is_valid() && outline_cache_id.outline_size > 0) {
-			outline_data_at_size->draw_char(p_canvas_item, p_pos, p_char, p_next, p_modulate * outline_color, fallback_outline_data_at_size, false, true); // Draw glyph outline.
+			outline_data_at_size->draw_char(p_canvas_item, p_pos, p_char, p_next, p_modulate * outline_color, fallback_outline_data_at_size, false, true, p_multirect); // Draw glyph outline.
 		}
-		return data_at_size->draw_char(p_canvas_item, p_pos, p_char, p_next, p_modulate, fallback_data_at_size, true, false) + spacing; // Return advance of the base glyph.
+		return data_at_size->draw_char(p_canvas_item, p_pos, p_char, p_next, p_modulate, fallback_data_at_size, true, false, p_multirect) + spacing; // Return advance of the base glyph.
 	} else {
-		return data_at_size->draw_char(p_canvas_item, p_pos, p_char, p_next, p_modulate, fallback_data_at_size, false, false) + spacing; // Draw base glyph and return advance.
+		return data_at_size->draw_char(p_canvas_item, p_pos, p_char, p_next, p_modulate, fallback_data_at_size, false, false, p_multirect) + spacing; // Draw base glyph and return advance.
 	}
 }
 
@@ -1435,7 +1428,7 @@ void DynamicFont::update_oversampling() {
 
 /////////////////////////
 
-RES ResourceFormatLoaderDynamicFont::load(const String &p_path, const String &p_original_path, Error *r_error) {
+RES ResourceFormatLoaderDynamicFont::load(const String &p_path, const String &p_original_path, Error *r_error, bool p_no_subresource_cache) {
 	if (r_error) {
 		*r_error = ERR_FILE_CANT_OPEN;
 	}

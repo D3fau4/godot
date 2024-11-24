@@ -684,7 +684,7 @@ void StyleBoxFlat::draw(RID p_canvas_item, const Rect2 &p_rect) const {
 	const bool rounded_corners = (corner_radius[0] > 0) || (corner_radius[1] > 0) || (corner_radius[2] > 0) || (corner_radius[3] > 0);
 	// Only enable antialiasing if it is actually needed. This improve performances
 	// and maximizes sharpness for non-skewed StyleBoxes with sharp corners.
-	const bool aa_on = (rounded_corners || !skew.is_equal_approx(Vector2())) && anti_aliased;
+	const bool aa_on = (rounded_corners || !skew.is_zero_approx()) && anti_aliased;
 
 	const bool blend_on = blend_border && draw_border;
 
@@ -1016,7 +1016,7 @@ void StyleBoxLine::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "color"), "set_color", "get_color");
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "grow_begin", PROPERTY_HINT_RANGE, "-300,300,1"), "set_grow_begin", "get_grow_begin");
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "grow_end", PROPERTY_HINT_RANGE, "-300,300,1"), "set_grow_end", "get_grow_end");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "thickness", PROPERTY_HINT_RANGE, "0,10"), "set_thickness", "get_thickness");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "thickness", PROPERTY_HINT_RANGE, "0,100"), "set_thickness", "get_thickness");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "vertical"), "set_vertical", "is_vertical");
 }
 

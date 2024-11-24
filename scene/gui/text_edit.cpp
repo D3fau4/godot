@@ -1653,6 +1653,11 @@ void TextEdit::_notification(int p_what) {
 				line_drawing_cache[line] = cache_entry;
 			}
 
+			// Flush out any text in the drawer BEFORE
+			// drawing the completion box, as we want the completion
+			// box to overwrite the underlying text.
+			drawer.flush();
+
 			bool completion_below = false;
 			if (completion_active && is_cursor_visible && completion_options.size() > 0) {
 				// Completion panel
@@ -1691,7 +1696,7 @@ void TextEdit::_notification(int p_what) {
 				const int icon_area_width = icon_area_size.width + icon_hsep;
 				width += icon_area_size.width + icon_hsep;
 
-				const int line_from = CLAMP(completion_index - row_count / 2, 0, completion_options_size - row_count);
+				const int line_from = CLAMP((completion_force_item_center < 0 ? completion_index : completion_force_item_center) - row_count / 2, 0, completion_options_size - row_count);
 
 				for (int i = 0; i < row_count; i++) {
 					int l = line_from + i;
@@ -1880,7 +1885,7 @@ void TextEdit::_notification(int p_what) {
 					cursor_end = cursor_start + post_text.length();
 				}
 
-				OS::get_singleton()->show_virtual_keyboard(get_text(), get_global_rect(), true, -1, cursor_start, cursor_end);
+				OS::get_singleton()->show_virtual_keyboard(get_text(), get_global_rect(), OS::KEYBOARD_TYPE_MULTILINE, -1, cursor_start, cursor_end);
 			}
 		} break;
 		case NOTIFICATION_FOCUS_EXIT: {
@@ -2402,6 +2407,8 @@ void TextEdit::_get_minimap_mouse_row(const Point2i &p_mouse, int &r_row) const 
 }
 
 void TextEdit::_gui_input(const Ref<InputEvent> &p_gui_input) {
+	ERR_FAIL_COND(p_gui_input.is_null());
+
 	double prev_v_scroll = v_scroll->get_value();
 	double prev_h_scroll = h_scroll->get_value();
 
@@ -2417,6 +2424,7 @@ void TextEdit::_gui_input(const Ref<InputEvent> &p_gui_input) {
 				if (completion_index > 0) {
 					completion_index--;
 					completion_current = completion_options[completion_index];
+					completion_force_item_center = -1;
 					update();
 				}
 			}
@@ -2424,13 +2432,17 @@ void TextEdit::_gui_input(const Ref<InputEvent> &p_gui_input) {
 				if (completion_index < completion_options.size() - 1) {
 					completion_index++;
 					completion_current = completion_options[completion_index];
+					completion_force_item_center = -1;
 					update();
 				}
 			}
 
 			if (mb->get_button_index() == BUTTON_LEFT) {
-				completion_index = CLAMP(completion_line_ofs + (mb->get_position().y - completion_rect.position.y) / get_row_height(), 0, completion_options.size() - 1);
+				if (completion_force_item_center == -1) {
+					completion_force_item_center = completion_index;
+				}
 
+				completion_index = CLAMP(completion_line_ofs + (mb->get_position().y - completion_rect.position.y) / get_row_height(), 0, completion_options.size() - 1);
 				completion_current = completion_options[completion_index];
 				update();
 				if (mb->is_doubleclick()) {
@@ -2826,6 +2838,7 @@ void TextEdit::_gui_input(const Ref<InputEvent> &p_gui_input) {
 							completion_index = completion_options.size() - 1;
 						}
 						completion_current = completion_options[completion_index];
+						completion_force_item_center = -1;
 						update();
 
 						accept_event();
@@ -2839,6 +2852,7 @@ void TextEdit::_gui_input(const Ref<InputEvent> &p_gui_input) {
 							completion_index = 0;
 						}
 						completion_current = completion_options[completion_index];
+						completion_force_item_center = -1;
 						update();
 
 						accept_event();
@@ -2851,6 +2865,7 @@ void TextEdit::_gui_input(const Ref<InputEvent> &p_gui_input) {
 							completion_index = 0;
 						}
 						completion_current = completion_options[completion_index];
+						completion_force_item_center = -1;
 						update();
 						accept_event();
 						return;
@@ -2862,6 +2877,7 @@ void TextEdit::_gui_input(const Ref<InputEvent> &p_gui_input) {
 							completion_index = completion_options.size() - 1;
 						}
 						completion_current = completion_options[completion_index];
+						completion_force_item_center = -1;
 						update();
 						accept_event();
 						return;
@@ -2870,6 +2886,7 @@ void TextEdit::_gui_input(const Ref<InputEvent> &p_gui_input) {
 					if (k->get_scancode() == KEY_HOME && completion_index > 0) {
 						completion_index = 0;
 						completion_current = completion_options[completion_index];
+						completion_force_item_center = -1;
 						update();
 						accept_event();
 						return;
@@ -2878,6 +2895,7 @@ void TextEdit::_gui_input(const Ref<InputEvent> &p_gui_input) {
 					if (k->get_scancode() == KEY_END && completion_index < completion_options.size() - 1) {
 						completion_index = completion_options.size() - 1;
 						completion_current = completion_options[completion_index];
+						completion_force_item_center = -1;
 						update();
 						accept_event();
 						return;
@@ -5444,7 +5462,7 @@ void TextEdit::_update_caches() {
 	cache.folded_icon = get_icon("folded");
 	cache.can_fold_icon = get_icon("fold");
 	cache.folded_eol_icon = get_icon("GuiEllipsis", "EditorIcons");
-	cache.executing_icon = get_icon("MainPlay", "EditorIcons");
+	cache.executing_icon = get_icon("TextEditorPlay", "EditorIcons");
 	text.set_font(cache.font);
 
 	if (syntax_highlighter) {
@@ -6922,6 +6940,7 @@ void TextEdit::_update_completion_candidates() {
 
 	completion_options.clear();
 	completion_index = 0;
+	completion_force_item_center = -1;
 	completion_base = s;
 	Vector<float> sim_cache;
 	bool single_quote = s.begins_with("'");
@@ -7035,6 +7054,7 @@ void TextEdit::code_complete(const List<ScriptCodeCompletionOption> &p_strings, 
 	completion_forced = p_forced;
 	completion_current = ScriptCodeCompletionOption();
 	completion_index = 0;
+	completion_force_item_center = -1;
 	_update_completion_candidates();
 }
 

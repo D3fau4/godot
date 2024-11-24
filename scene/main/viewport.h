@@ -295,6 +295,8 @@ private:
 		// info used when this is a window
 
 		bool key_event_accepted;
+		bool mouse_in_window;
+		Map<int, ObjectID> touch_focus;
 		Control *mouse_focus;
 		Control *last_mouse_focus;
 		Control *mouse_click_grabber;
@@ -323,6 +325,14 @@ private:
 		int canvas_sort_index; //for sorting items with canvas as root
 		bool dragging;
 		bool drag_successful;
+
+		struct CanvasParent {
+			ObjectID id;
+			uint32_t first_child_moved = UINT32_MAX;
+			uint32_t last_child_moved_plus_one = 0;
+		};
+
+		static LocalVector<CanvasParent> canvas_parents_dirty_order;
 
 		GUI();
 	} gui;
@@ -585,6 +595,10 @@ public:
 
 	bool gui_is_dragging() const;
 	bool gui_is_drag_successful() const;
+
+	static void notify_canvas_parent_children_moved(Node &r_parent, uint32_t p_first_child, uint32_t p_last_child_plus_one);
+	static void notify_canvas_parent_child_count_reduced(const Node &p_parent);
+	static void flush_canvas_parents_dirty_order();
 
 	Viewport();
 	~Viewport();

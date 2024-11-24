@@ -587,7 +587,12 @@ Vector2 GraphNode::get_offset() const {
 }
 
 void GraphNode::set_selected(bool p_selected) {
+	if (selected == p_selected) {
+		return;
+	}
+
 	selected = p_selected;
+	emit_signal(p_selected ? "selected" : "unselected");
 	update();
 }
 
@@ -741,6 +746,8 @@ Color GraphNode::get_connection_output_color(int p_idx) {
 }
 
 void GraphNode::_gui_input(const Ref<InputEvent> &p_ev) {
+	ERR_FAIL_COND(p_ev.is_null());
+
 	Ref<InputEventMouseButton> mb = p_ev;
 	if (mb.is_valid()) {
 		ERR_FAIL_COND_MSG(get_parent_control() == nullptr, "GraphNode must be the child of a GraphEdit node.");
@@ -874,6 +881,8 @@ void GraphNode::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "overlay", PROPERTY_HINT_ENUM, "Disabled,Breakpoint,Position"), "set_overlay", "get_overlay");
 
 	ADD_SIGNAL(MethodInfo("offset_changed"));
+	ADD_SIGNAL(MethodInfo("selected"));
+	ADD_SIGNAL(MethodInfo("unselected"));
 	ADD_SIGNAL(MethodInfo("slot_updated", PropertyInfo(Variant::INT, "idx")));
 	ADD_SIGNAL(MethodInfo("dragged", PropertyInfo(Variant::VECTOR2, "from"), PropertyInfo(Variant::VECTOR2, "to")));
 	ADD_SIGNAL(MethodInfo("raise_request"));

@@ -48,9 +48,14 @@
 #include "os_android.h"
 #include "string_android.h"
 #include "thread_jandroid.h"
+#include "tts_android.h"
 
 #include <android/input.h>
 #include <unistd.h>
+
+#ifdef TOOLS_ENABLED
+#include "editor/editor_settings.h"
+#endif
 
 static JavaClassWrapper *java_class_wrapper = nullptr;
 static OS_Android *os_android = nullptr;
@@ -111,6 +116,40 @@ static void _initialize_java_modules() {
 	}
 }
 
+static void _terminate(JNIEnv *env, bool p_restart = false) {
+	step.set(-1); // Ensure no further steps are attempted and no further events are sent
+
+	// lets cleanup
+	if (java_class_wrapper) {
+		memdelete(java_class_wrapper);
+	}
+	if (input_handler) {
+		delete input_handler;
+	}
+	// Whether restarting is handled by 'Main::cleanup()'
+	bool restart_on_cleanup = false;
+	if (os_android) {
+		restart_on_cleanup = os_android->is_restart_on_exit_set();
+		os_android->main_loop_end();
+		Main::cleanup();
+		delete os_android;
+	}
+	if (godot_io_java) {
+		delete godot_io_java;
+	}
+	if (godot_java) {
+		godot_java->destroy_offscreen_gl(env);
+		if (!restart_on_cleanup) {
+			if (p_restart) {
+				godot_java->restart(env);
+			} else {
+				godot_java->force_quit(env);
+			}
+		}
+		delete godot_java;
+	}
+}
+
 extern "C" {
 
 JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_setVirtualKeyboardHeight(JNIEnv *env, jclass clazz, jint p_height) {
@@ -143,27 +182,10 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_initialize(JNIEnv *en
 }
 
 JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_ondestroy(JNIEnv *env, jclass clazz) {
-	// lets cleanup
-	if (java_class_wrapper) {
-		memdelete(java_class_wrapper);
-	}
-	if (godot_io_java) {
-		delete godot_io_java;
-	}
-	if (godot_java) {
-		godot_java->destroy_offscreen_gl(env);
-		delete godot_java;
-	}
-	if (input_handler) {
-		delete input_handler;
-	}
-	if (os_android) {
-		os_android->main_loop_end();
-		delete os_android;
-	}
+	_terminate(env, false);
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_setup(JNIEnv *env, jclass clazz, jobjectArray p_cmdline) {
+JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_setup(JNIEnv *env, jclass clazz, jobjectArray p_cmdline, jobject p_godot_tts) {
 	setup_android_thread();
 
 	const char **cmdline = nullptr;
@@ -173,10 +195,10 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_setup(JNIEnv *env, jc
 		cmdlen = env->GetArrayLength(p_cmdline);
 		if (cmdlen) {
 			cmdline = (const char **)memalloc((cmdlen + 1) * sizeof(const char *));
-			ERR_FAIL_NULL_MSG(cmdline, "Out of memory.");
+			ERR_FAIL_NULL_V_MSG(cmdline, false, "Out of memory.");
 			cmdline[cmdlen] = nullptr;
 			j_cmdline = (jstring *)memalloc(cmdlen * sizeof(jstring));
-			ERR_FAIL_NULL_MSG(j_cmdline, "Out of memory.");
+			ERR_FAIL_NULL_V_MSG(j_cmdline, false, "Out of memory.");
 
 			for (int i = 0; i < cmdlen; i++) {
 				jstring string = (jstring)env->GetObjectArrayElement(p_cmdline, i);
@@ -201,12 +223,15 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_setup(JNIEnv *env, jc
 
 	// Note: --help and --version return ERR_HELP, but this should be translated to 0 if exit codes are propagated.
 	if (err != OK) {
-		return; // should exit instead and print the error
+		return false;
 	}
+
+	TTS_Android::setup(p_godot_tts);
 
 	java_class_wrapper = memnew(JavaClassWrapper(godot_java->get_activity()));
 	ClassDB::register_class<JNISingleton>();
 	_initialize_java_modules();
+	return true;
 }
 
 JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_resize(JNIEnv *env, jclass clazz, jint width, jint height) {
@@ -222,9 +247,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_newcontext(JNIEnv *en
 			os_android->set_offscreen_gl_available(godot_java->create_offscreen_gl(env));
 		} else {
 			// GL context recreated because it was lost; restart app to let it reload everything
-			step.set(-1); // Ensure no further steps are attempted and no further events are sent
-			os_android->main_loop_end();
-			godot_java->restart(env);
+			_terminate(env, true);
 		}
 	}
 }
@@ -236,6 +259,10 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_back(JNIEnv *env, jcl
 	if (os_android->get_main_loop()) {
 		os_android->get_main_loop()->notification(MainLoop::NOTIFICATION_WM_GO_BACK_REQUEST);
 	}
+}
+
+JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_ttsCallback(JNIEnv *env, jclass clazz, jint event, jint id, jint pos) {
+	TTS_Android::_java_utterance_callback(event, id, pos);
 }
 
 JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_step(JNIEnv *env, jclass clazz) {
@@ -269,62 +296,53 @@ JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_step(JNIEnv *env,
 
 	bool should_swap_buffers = false;
 	if (os_android->main_loop_iterate(&should_swap_buffers)) {
-		godot_java->force_quit(env);
+		_terminate(env, false);
 	}
 
 	return should_swap_buffers;
 }
 
-void touch_preprocessing(JNIEnv *env, jclass clazz, jint input_device, jint ev, jint pointer, jint pointer_count, jfloatArray positions, jint buttons_mask, jfloat vertical_factor, jfloat horizontal_factor) {
+// Called on the UI thread
+JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_dispatchMouseEvent(JNIEnv *env, jclass clazz, jint p_event_type, jint p_button_mask, jfloat p_x, jfloat p_y, jfloat p_delta_x, jfloat p_delta_y, jboolean p_double_click, jboolean p_source_mouse_relative) {
+	if (step.get() <= 0) {
+		return;
+	}
+
+	input_handler->process_mouse_event(p_event_type, p_button_mask, Point2(p_x, p_y), Vector2(p_delta_x, p_delta_y), p_double_click, p_source_mouse_relative);
+}
+
+// Called on the UI thread
+JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_dispatchTouchEvent(JNIEnv *env, jclass clazz, jint ev, jint pointer, jint pointer_count, jfloatArray position, jboolean p_double_tap) {
 	if (step.get() <= 0) {
 		return;
 	}
 	Vector<AndroidInputHandler::TouchPos> points;
 	for (int i = 0; i < pointer_count; i++) {
 		jfloat p[3];
-		env->GetFloatArrayRegion(positions, i * 3, 3, p);
+		env->GetFloatArrayRegion(position, i * 3, 3, p);
 		AndroidInputHandler::TouchPos tp;
 		tp.pos = Point2(p[1], p[2]);
 		tp.id = (int)p[0];
 		points.push_back(tp);
 	}
 
-	if ((input_device & AINPUT_SOURCE_MOUSE) == AINPUT_SOURCE_MOUSE) {
-		input_handler->process_mouse_event(ev, buttons_mask, points[0].pos, vertical_factor, horizontal_factor);
-	} else {
-		input_handler->process_touch(ev, pointer, points);
-	}
+	input_handler->process_touch_event(ev, pointer, points, p_double_tap);
 }
 
 // Called on the UI thread
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_touch__IIII_3F(JNIEnv *env, jclass clazz, jint input_device, jint ev, jint pointer, jint pointer_count, jfloatArray position) {
-	touch_preprocessing(env, clazz, input_device, ev, pointer, pointer_count, position);
-}
-
-// Called on the UI thread
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_touch__IIII_3FI(JNIEnv *env, jclass clazz, jint input_device, jint ev, jint pointer, jint pointer_count, jfloatArray position, jint buttons_mask) {
-	touch_preprocessing(env, clazz, input_device, ev, pointer, pointer_count, position, buttons_mask);
-}
-
-// Called on the UI thread
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_touch__IIII_3FIFF(JNIEnv *env, jclass clazz, jint input_device, jint ev, jint pointer, jint pointer_count, jfloatArray position, jint buttons_mask, jfloat vertical_factor, jfloat horizontal_factor) {
-	touch_preprocessing(env, clazz, input_device, ev, pointer, pointer_count, position, buttons_mask, vertical_factor, horizontal_factor);
-}
-
-// Called on the UI thread
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_hover(JNIEnv *env, jclass clazz, jint p_type, jfloat p_x, jfloat p_y) {
+JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_magnify(JNIEnv *env, jclass clazz, jfloat p_x, jfloat p_y, jfloat p_factor) {
 	if (step.get() <= 0) {
 		return;
 	}
-	input_handler->process_hover(p_type, Point2(p_x, p_y));
+	input_handler->process_magnify(Point2(p_x, p_y), p_factor);
 }
 
 // Called on the UI thread
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_doubleTap(JNIEnv *env, jclass clazz, jint p_button_mask, jint p_x, jint p_y) {
+JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_pan(JNIEnv *env, jclass clazz, jfloat p_x, jfloat p_y, jfloat p_delta_x, jfloat p_delta_y) {
 	if (step.get() <= 0) {
 		return;
 	}
-	input_handler->process_double_tap(p_button_mask, Point2(p_x, p_y));
+	input_handler->process_pan(Point2(p_x, p_y), Vector2(p_delta_x, p_delta_y));
 }
 
 // Called on the UI thread
@@ -393,11 +411,11 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_joyconnectionchanged(
 }
 
 // Called on the UI thread
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_key(JNIEnv *env, jclass clazz, jint p_keycode, jint p_scancode, jint p_unicode_char, jboolean p_pressed) {
+JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_key(JNIEnv *env, jclass clazz, jint p_scancode, jint p_physical_scancode, jint p_unicode, jboolean p_pressed) {
 	if (step.get() <= 0) {
 		return;
 	}
-	input_handler->process_key_event(p_keycode, p_scancode, p_unicode_char, p_pressed);
+	input_handler->process_key_event(p_scancode, p_physical_scancode, p_unicode, p_pressed);
 }
 
 JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_accelerometer(JNIEnv *env, jclass clazz, jfloat x, jfloat y, jfloat z) {
@@ -434,6 +452,18 @@ JNIEXPORT jstring JNICALL Java_org_godotengine_godot_GodotLib_getGlobal(JNIEnv *
 	String js = jstring_to_string(path, env);
 
 	return env->NewStringUTF(ProjectSettings::get_singleton()->get(js).operator String().utf8().get_data());
+}
+
+JNIEXPORT jstring JNICALL Java_org_godotengine_godot_GodotLib_getEditorSetting(JNIEnv *env, jclass clazz, jstring p_setting_key) {
+	String editor_setting = "";
+#ifdef TOOLS_ENABLED
+	String godot_setting_key = jstring_to_string(p_setting_key, env);
+	editor_setting = EDITOR_GET(godot_setting_key).operator String();
+#else
+	WARN_PRINT("Access to the Editor Settings in only available on Editor builds");
+#endif
+
+	return env->NewStringUTF(editor_setting.utf8().get_data());
 }
 
 JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_callobject(JNIEnv *env, jclass clazz, jlong ID, jstring method, jobjectArray params) {

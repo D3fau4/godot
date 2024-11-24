@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="Array" version="3.5" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="Array" version="3.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		A generic array datatype.
 	</brief_description>
@@ -261,6 +261,16 @@
 			<return type="Variant" />
 			<description>
 				Returns the minimum value contained in the array if all elements are of comparable types. If the elements can't be compared, [code]null[/code] is returned.
+			</description>
+		</method>
+		<method name="pick_random">
+			<return type="Variant" />
+			<description>
+				Returns a random value from the target array.
+				[codeblock]
+				var array: Array[int] = [1, 2, 3, 4]
+				print(array.pick_random())  # Prints either of the four numbers.
+				[/codeblock]
 			</description>
 		</method>
 		<method name="pop_at">

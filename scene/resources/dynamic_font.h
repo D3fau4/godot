@@ -134,14 +134,86 @@ class DynamicFontAtSize : public Reference {
 
 	bool valid;
 
-	struct CharTexture {
-		PoolVector<uint8_t> imgdata;
-		int texture_size;
-		Vector<int> offsets;
-		Ref<ImageTexture> texture;
+	struct FontTexturePosition {
+		int32_t index = -1;
+		int32_t x = 0;
+		int32_t y = 0;
+
+		FontTexturePosition() {}
+		FontTexturePosition(int32_t p_id, int32_t p_x, int32_t p_y) :
+				index(p_id), x(p_x), y(p_y) {}
 	};
 
-	Vector<CharTexture> textures;
+	struct Shelf {
+		int32_t x = 0;
+		int32_t y = 0;
+		int32_t w = 0;
+		int32_t h = 0;
+
+		FontTexturePosition alloc_shelf(int32_t p_id, int32_t p_w, int32_t p_h) {
+			if (p_w > w || p_h > h) {
+				return FontTexturePosition(-1, 0, 0);
+			}
+			int32_t xx = x;
+			x += p_w;
+			w -= p_w;
+			return FontTexturePosition(p_id, xx, y);
+		}
+
+		Shelf() {}
+		Shelf(int32_t p_x, int32_t p_y, int32_t p_w, int32_t p_h) :
+				x(p_x), y(p_y), w(p_w), h(p_h) {}
+	};
+
+	struct ShelfPackTexture {
+		int32_t texture_size = 1024;
+		PoolVector<uint8_t> imgdata;
+		Ref<ImageTexture> texture;
+		List<Shelf> shelves;
+		Image::Format format;
+		bool dirty = true;
+
+		FontTexturePosition pack_rect(int32_t p_id, int32_t p_h, int32_t p_w) {
+			int32_t y = 0;
+			int32_t waste = 0;
+			List<Shelf>::Element *best_shelf = nullptr;
+			int32_t best_waste = std::numeric_limits<std::int32_t>::max();
+
+			for (List<Shelf>::Element *E = shelves.front(); E; E = E->next()) {
+				y += E->get().h;
+				if (p_w > E->get().w) {
+					continue;
+				}
+				if (p_h == E->get().h) {
+					return E->get().alloc_shelf(p_id, p_w, p_h);
+				}
+				if (p_h > E->get().h) {
+					continue;
+				}
+				if (p_h < E->get().h) {
+					waste = (E->get().h - p_h) * p_w;
+					if (waste < best_waste) {
+						best_waste = waste;
+						best_shelf = E;
+					}
+				}
+			}
+			if (best_shelf) {
+				return best_shelf->get().alloc_shelf(p_id, p_w, p_h);
+			}
+			if (p_h <= (texture_size - y) && p_w <= texture_size) {
+				List<Shelf>::Element *E = shelves.push_back(Shelf(0, y, texture_size, p_h));
+				return E->get().alloc_shelf(p_id, p_w, p_h);
+			}
+			return FontTexturePosition(-1, 0, 0);
+		}
+
+		ShelfPackTexture() {}
+		ShelfPackTexture(int32_t p_size) :
+				texture_size(p_size) {}
+	};
+
+	Vector<ShelfPackTexture> textures;
 
 	struct Character {
 		bool found;
@@ -160,16 +232,10 @@ class DynamicFontAtSize : public Reference {
 		static Character not_found();
 	};
 
-	struct TexturePosition {
-		int index;
-		int x;
-		int y;
-	};
-
 	const Pair<const Character *, DynamicFontAtSize *> _find_char_with_font(int32_t p_char, const Vector<Ref<DynamicFontAtSize>> &p_fallbacks) const;
 	Character _make_outline_char(int32_t p_char);
 	float _get_kerning_advance(const DynamicFontAtSize *font, int32_t p_char, int32_t p_next) const;
-	TexturePosition _find_texture_pos_for_glyph(int p_color_size, Image::Format p_image_format, int p_width, int p_height);
+	FontTexturePosition _find_texture_pos_for_glyph(int p_color_size, Image::Format p_image_format, int p_width, int p_height);
 	Character _bitmap_to_character(FT_Bitmap bitmap, int yofs, int xofs, float advance);
 
 	HashMap<int32_t, Character> char_map;
@@ -193,7 +259,7 @@ public:
 	Size2 get_char_size(CharType p_char, CharType p_next, const Vector<Ref<DynamicFontAtSize>> &p_fallbacks) const;
 	String get_available_chars() const;
 
-	float draw_char(RID p_canvas_item, const Point2 &p_pos, CharType p_char, CharType p_next, const Color &p_modulate, const Vector<Ref<DynamicFontAtSize>> &p_fallbacks, bool p_advance_only = false, bool p_outline = false) const;
+	float draw_char(RID p_canvas_item, const Point2 &p_pos, CharType p_char, CharType p_next, const Color &p_modulate, const Vector<Ref<DynamicFontAtSize>> &p_fallbacks, bool p_advance_only = false, bool p_outline = false, MultiRect *p_multirect = nullptr) const;
 
 	RID get_char_texture(CharType p_char, CharType p_next, const Vector<Ref<DynamicFontAtSize>> &p_fallbacks) const;
 	Size2 get_char_texture_size(CharType p_char, CharType p_next, const Vector<Ref<DynamicFontAtSize>> &p_fallbacks) const;
@@ -286,6 +352,8 @@ public:
 	virtual float get_ascent() const;
 	virtual float get_descent() const;
 
+	virtual int get_spacing_char() const;
+
 	virtual Size2 get_char_size(CharType p_char, CharType p_next = 0) const;
 	String get_available_chars() const;
 
@@ -293,7 +361,7 @@ public:
 
 	virtual bool has_outline() const;
 
-	virtual float draw_char(RID p_canvas_item, const Point2 &p_pos, CharType p_char, CharType p_next = 0, const Color &p_modulate = Color(1, 1, 1), bool p_outline = false) const;
+	virtual float draw_char_ex(RID p_canvas_item, const Point2 &p_pos, CharType p_char, CharType p_next = 0, const Color &p_modulate = Color(1, 1, 1), bool p_outline = false, MultiRect *p_multirect = nullptr) const;
 
 	RID get_char_texture(CharType p_char, CharType p_next, bool p_outline) const;
 	Size2 get_char_texture_size(CharType p_char, CharType p_next, bool p_outline) const;
@@ -323,7 +391,7 @@ VARIANT_ENUM_CAST(DynamicFont::SpacingType);
 
 class ResourceFormatLoaderDynamicFont : public ResourceFormatLoader {
 public:
-	virtual RES load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr);
+	virtual RES load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_no_subresource_cache = false);
 	virtual void get_recognized_extensions(List<String> *p_extensions) const;
 	virtual bool handles_type(const String &p_type) const;
 	virtual String get_resource_type(const String &p_path) const;

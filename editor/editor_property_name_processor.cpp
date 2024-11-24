@@ -64,6 +64,10 @@ String EditorPropertyNameProcessor::_capitalize_name(const String &p_name) const
 
 	Vector<String> parts = p_name.split("_", false);
 	for (int i = 0; i < parts.size(); i++) {
+		// Articles/conjunctions/prepositions which should only be capitalized when not at beginning and end.
+		if (i > 0 && i + 1 < parts.size() && stop_words.find(parts[i]) != -1) {
+			continue;
+		}
 		const Map<String, String>::Element *remap = capitalize_string_remaps.find(parts[i]);
 		if (remap) {
 			parts.write[i] = remap->get();
@@ -106,6 +110,7 @@ EditorPropertyNameProcessor::EditorPropertyNameProcessor() {
 	capitalize_string_remaps["aabb"] = "AABB";
 	capitalize_string_remaps["adb"] = "ADB";
 	capitalize_string_remaps["ao"] = "AO";
+	capitalize_string_remaps["api"] = "API";
 	capitalize_string_remaps["apk"] = "APK";
 	capitalize_string_remaps["arm64-v8a"] = "arm64-v8a";
 	capitalize_string_remaps["armeabi-v7a"] = "armeabi-v7a";
@@ -121,6 +126,7 @@ EditorPropertyNameProcessor::EditorPropertyNameProcessor() {
 	capitalize_string_remaps["commentfocus"] = "Comment Focus";
 	capitalize_string_remaps["cpu"] = "CPU";
 	capitalize_string_remaps["csg"] = "CSG";
+	capitalize_string_remaps["csgs"] = "CSGs";
 	capitalize_string_remaps["db"] = "dB";
 	capitalize_string_remaps["defaultfocus"] = "Default Focus";
 	capitalize_string_remaps["defaultframe"] = "Default Frame";
@@ -142,6 +148,7 @@ EditorPropertyNameProcessor::EditorPropertyNameProcessor() {
 	capitalize_string_remaps["gdscript"] = "GDScript";
 	capitalize_string_remaps["ggx"] = "GGX";
 	capitalize_string_remaps["gi"] = "GI";
+	capitalize_string_remaps["gl"] = "GL";
 	capitalize_string_remaps["glb"] = "GLB";
 	capitalize_string_remaps["gles2"] = "GLES2";
 	capitalize_string_remaps["gles3"] = "GLES3";
@@ -156,6 +163,7 @@ EditorPropertyNameProcessor::EditorPropertyNameProcessor() {
 	capitalize_string_remaps["html"] = "HTML";
 	capitalize_string_remaps["http"] = "HTTP";
 	capitalize_string_remaps["id"] = "ID";
+	capitalize_string_remaps["ids"] = "IDs";
 	capitalize_string_remaps["igd"] = "IGD";
 	capitalize_string_remaps["ik"] = "IK";
 	capitalize_string_remaps["image@2x"] = "Image @2x";
@@ -191,11 +199,14 @@ EditorPropertyNameProcessor::EditorPropertyNameProcessor() {
 	capitalize_string_remaps["opengl"] = "OpenGL";
 	capitalize_string_remaps["opentype"] = "OpenType";
 	capitalize_string_remaps["openxr"] = "OpenXR";
+	capitalize_string_remaps["osslsigncode"] = "osslsigncode";
 	capitalize_string_remaps["pck"] = "PCK";
 	capitalize_string_remaps["png"] = "PNG";
 	capitalize_string_remaps["po2"] = "(Power of 2)"; // Unit.
 	capitalize_string_remaps["pvrtc"] = "PVRTC";
 	capitalize_string_remaps["pvs"] = "PVS";
+	capitalize_string_remaps["rcedit"] = "rcedit";
+	capitalize_string_remaps["rcodesign"] = "rcodesign";
 	capitalize_string_remaps["rgb"] = "RGB";
 	capitalize_string_remaps["rid"] = "RID";
 	capitalize_string_remaps["rmb"] = "RMB";
@@ -206,6 +217,7 @@ EditorPropertyNameProcessor::EditorPropertyNameProcessor() {
 	capitalize_string_remaps["sdk"] = "SDK";
 	capitalize_string_remaps["sec"] = "(sec)"; // Unit.
 	capitalize_string_remaps["selectedframe"] = "Selected Frame";
+	capitalize_string_remaps["signtool"] = "signtool";
 	capitalize_string_remaps["sms"] = "SMS";
 	capitalize_string_remaps["srgb"] = "sRGB";
 	capitalize_string_remaps["ssao"] = "SSAO";
@@ -217,7 +229,9 @@ EditorPropertyNameProcessor::EditorPropertyNameProcessor() {
 	capitalize_string_remaps["sv"] = "SV";
 	capitalize_string_remaps["svg"] = "SVG";
 	capitalize_string_remaps["tcp"] = "TCP";
+	capitalize_string_remaps["tls"] = "TLS";
 	capitalize_string_remaps["ui"] = "UI";
+	capitalize_string_remaps["uri"] = "URI";
 	capitalize_string_remaps["url"] = "URL";
 	capitalize_string_remaps["urls"] = "URLs";
 	capitalize_string_remaps["us"] = String::utf8("(µs)"); // Unit.
@@ -239,12 +253,35 @@ EditorPropertyNameProcessor::EditorPropertyNameProcessor() {
 	capitalize_string_remaps["webp"] = "WebP";
 	capitalize_string_remaps["webrtc"] = "WebRTC";
 	capitalize_string_remaps["websocket"] = "WebSocket";
+	capitalize_string_remaps["wine"] = "wine";
 	capitalize_string_remaps["wifi"] = "Wi-Fi";
 	capitalize_string_remaps["x86"] = "x86";
 	capitalize_string_remaps["xr"] = "XR";
+	capitalize_string_remaps["xray"] = "X-Ray";
 	capitalize_string_remaps["xy"] = "XY";
 	capitalize_string_remaps["xz"] = "XZ";
 	capitalize_string_remaps["yz"] = "YZ";
+
+	// Articles, conjunctions, prepositions.
+	// The following initialization is parsed in `editor/translations/extract.py` with a regex.
+	// The word definition format should be kept synced with the regex.
+	stop_words.push_back("a");
+	stop_words.push_back("an");
+	stop_words.push_back("and");
+	stop_words.push_back("as");
+	stop_words.push_back("at");
+	stop_words.push_back("by");
+	stop_words.push_back("for");
+	stop_words.push_back("in");
+	stop_words.push_back("not");
+	stop_words.push_back("of");
+	stop_words.push_back("on");
+	stop_words.push_back("or");
+	stop_words.push_back("over");
+	stop_words.push_back("per");
+	stop_words.push_back("the");
+	stop_words.push_back("then");
+	stop_words.push_back("to");
 }
 
 EditorPropertyNameProcessor::~EditorPropertyNameProcessor() {

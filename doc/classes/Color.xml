@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="Color" version="3.5" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="Color" version="3.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		Color in RGBA format using floats on the range of 0 to 1.
 	</brief_description>
@@ -37,6 +37,17 @@
 				Constructs a color from a 32-bit integer in RGBA format (each byte represents a color channel).
 				[codeblock]
 				var color = Color(274) # Similar to Color(0.0, 0.0, 0.004, 0.07)
+				[/codeblock]
+			</description>
+		</method>
+		<method name="Color">
+			<return type="Color" />
+			<argument index="0" name="from" type="Color" />
+			<argument index="1" name="alpha" type="float" />
+			<description>
+				Constructs a color from the existing color, with [member a] set to the given [code]alpha[/code] value.
+				[codeblock]
+				var red = Color(Color.red, 0.2) # 20% opaque red.
 				[/codeblock]
 			</description>
 		</method>

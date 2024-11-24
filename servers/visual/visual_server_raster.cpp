@@ -65,6 +65,11 @@ void VisualServerRaster::_draw_margins() {
 /* FREE */
 
 void VisualServerRaster::free(RID p_rid) {
+	if (!p_rid.is_valid()) {
+		ERR_FAIL_MSG("VisualServer attempted to free a NULL RID.");
+		return;
+	}
+
 	if (VSG::storage->free(p_rid)) {
 		return;
 	}
@@ -80,6 +85,8 @@ void VisualServerRaster::free(RID p_rid) {
 	if (VSG::scene_render->free(p_rid)) {
 		return;
 	}
+
+	ERR_FAIL_MSG("RID not found by VisualServer.");
 }
 
 /* EVENT QUEUING */
@@ -127,6 +134,20 @@ void VisualServerRaster::draw(bool p_swap_buffers, double frame_step) {
 	VS::get_singleton()->emit_signal("frame_post_draw");
 }
 void VisualServerRaster::sync() {
+}
+
+void VisualServerRaster::set_physics_interpolation_enabled(bool p_enabled) {
+	VSG::scene->set_physics_interpolation_enabled(p_enabled);
+	VSG::canvas->set_physics_interpolation_enabled(p_enabled);
+}
+
+void VisualServerRaster::tick() {
+	VSG::scene->tick();
+	VSG::canvas->tick();
+}
+
+void VisualServerRaster::pre_draw(bool p_will_draw) {
+	VSG::scene->pre_draw(p_will_draw);
 }
 
 bool VisualServerRaster::has_changed(ChangedPriority p_priority) const {

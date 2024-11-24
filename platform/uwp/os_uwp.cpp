@@ -59,6 +59,8 @@ using namespace Windows::UI::ViewManagement;
 using namespace Windows::Devices::Input;
 using namespace Windows::Devices::Sensors;
 using namespace Windows::ApplicationModel::DataTransfer;
+using namespace Windows::System::Profile;
+using namespace Windows::Storage::Streams;
 using namespace concurrency;
 
 int OS_UWP::get_video_driver_count() const {
@@ -438,14 +440,12 @@ void OS_UWP::ManagedType::on_gyroscope_reading_changed(Gyrometer ^ sender, Gyrom
 void OS_UWP::set_mouse_mode(MouseMode p_mode) {
 	if (p_mode == MouseMode::MOUSE_MODE_CAPTURED) {
 		CoreWindow::GetForCurrentThread()->SetPointerCapture();
-
 	} else {
 		CoreWindow::GetForCurrentThread()->ReleasePointerCapture();
 	}
 
-	if (p_mode == MouseMode::MOUSE_MODE_CAPTURED || p_mode == MouseMode::MOUSE_MODE_HIDDEN) {
+	if (p_mode == MouseMode::MOUSE_MODE_HIDDEN || p_mode == MouseMode::MOUSE_MODE_CAPTURED || p_mode == MouseMode::MOUSE_MODE_CONFINED_HIDDEN) {
 		CoreWindow::GetForCurrentThread()->PointerCursor = nullptr;
-
 	} else {
 		CoreWindow::GetForCurrentThread()->PointerCursor = ref new CoreCursor(CoreCursorType::Arrow, 0);
 	}
@@ -709,6 +709,36 @@ String OS_UWP::get_executable_path() const {
 void OS_UWP::set_icon(const Ref<Image> &p_icon) {
 }
 
+String OS_UWP::get_unique_id() const {
+	// Get the hardware token and read it into an array of bytes.
+	HardwareToken ^ token = HardwareIdentification::GetPackageSpecificToken(nullptr);
+	IBuffer ^ hwId = token->Id;
+	DataReader ^ dr = DataReader::FromBuffer(hwId);
+	uint8_t *data = new uint8_t[hwId->Length];
+	dr->ReadBytes(Platform::ArrayReference<uint8_t>(data, hwId->Length));
+
+	// Convert the byte array to hexadecimal.
+	String id;
+	char hexStr[3] = "00";
+
+	for (int i = 0; i < hwId->Length; i++) {
+		// Convert next byte to hexadecimal.
+		sprintf(hexStr, "%x", (int)data[i]);
+
+		if (data[i] < 16) {
+			hexStr[1] = hexStr[0];
+			hexStr[0] = '0';
+		}
+
+		// Add the next 2 hexits to the ID string.
+		id += hexStr;
+	}
+
+	// Free the temporary data array and return the device ID.
+	delete[] data;
+	return id;
+}
+
 bool OS_UWP::has_environment(const String &p_var) const {
 	return false;
 };
@@ -721,7 +751,7 @@ bool OS_UWP::set_environment(const String &p_var, const String &p_value) const {
 	return false;
 }
 
-String OS_UWP::get_stdin_string(bool p_block) {
+String OS_UWP::get_stdin_string() {
 	return String();
 }
 
@@ -762,7 +792,7 @@ bool OS_UWP::has_virtual_keyboard() const {
 	return UIViewSettings::GetForCurrentView()->UserInteractionMode == UserInteractionMode::Touch;
 }
 
-void OS_UWP::show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect, bool p_multiline, int p_max_input_length, int p_cursor_start, int p_cursor_end) {
+void OS_UWP::show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect, VirtualKeyboardType p_type, int p_max_input_length, int p_cursor_start, int p_cursor_end) {
 	InputPane ^ pane = InputPane::GetForCurrentView();
 	pane->TryShow();
 }

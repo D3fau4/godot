@@ -235,9 +235,7 @@ void RayCast::add_exception_rid(const RID &p_rid) {
 void RayCast::add_exception(const Object *p_object) {
 	ERR_FAIL_NULL(p_object);
 	const CollisionObject *co = Object::cast_to<CollisionObject>(p_object);
-	if (!co) {
-		return;
-	}
+	ERR_FAIL_COND_MSG(!co, "The passed Node must be an instance of CollisionObject.");
 	add_exception_rid(co->get_rid());
 }
 
@@ -248,9 +246,7 @@ void RayCast::remove_exception_rid(const RID &p_rid) {
 void RayCast::remove_exception(const Object *p_object) {
 	ERR_FAIL_NULL(p_object);
 	const CollisionObject *co = Object::cast_to<CollisionObject>(p_object);
-	if (!co) {
-		return;
-	}
+	ERR_FAIL_COND_MSG(!co, "The passed Node must be an instance of CollisionObject.");
 	remove_exception_rid(co->get_rid());
 }
 
@@ -396,7 +392,7 @@ void RayCast::set_debug_shape_custom_color(const Color &p_color) {
 	}
 }
 
-Ref<SpatialMaterial> RayCast::get_debug_material() {
+Ref<Material3D> RayCast::get_debug_material() {
 	_update_debug_shape_material();
 	return debug_material;
 }
@@ -428,10 +424,10 @@ void RayCast::_update_debug_shape_material(bool p_check_collision) {
 		Ref<SpatialMaterial> material = memnew(SpatialMaterial);
 		debug_material = material;
 
-		material->set_flag(SpatialMaterial::FLAG_UNSHADED, true);
-		material->set_feature(SpatialMaterial::FEATURE_TRANSPARENT, true);
+		material->set_flag(Material3D::FLAG_UNSHADED, true);
+		material->set_feature(Material3D::FEATURE_TRANSPARENT, true);
 		// Use double-sided rendering so that the RayCast can be seen if the camera is inside.
-		material->set_cull_mode(SpatialMaterial::CULL_DISABLED);
+		material->set_cull_mode(Material3D::CULL_DISABLED);
 	}
 
 	Color color = debug_shape_custom_color;
@@ -450,7 +446,7 @@ void RayCast::_update_debug_shape_material(bool p_check_collision) {
 		}
 	}
 
-	Ref<SpatialMaterial> material = static_cast<Ref<SpatialMaterial>>(debug_material);
+	Ref<Material3D> material = static_cast<Ref<Material3D>>(debug_material);
 	material->set_albedo(color);
 }
 

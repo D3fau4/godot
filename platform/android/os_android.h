@@ -42,6 +42,31 @@ class GodotJavaWrapper;
 class GodotIOJavaWrapper;
 
 class OS_Android : public OS_Unix {
+	// https://developer.android.com/reference/android/view/PointerIcon
+	// mapping between Godot's cursor shape to Android's'
+	int android_cursors[CURSOR_MAX] = {
+		1000, //CURSOR_ARROW
+		1008, //CURSOR_IBEAM
+		1002, //CURSOR_POINTIN
+		1007, //CURSOR_CROSS
+		1004, //CURSOR_WAIT
+		1004, //CURSOR_BUSY
+		1021, //CURSOR_DRAG
+		1021, //CURSOR_CAN_DRO
+		1000, //CURSOR_FORBIDD (no corresponding icon in Android's icon so fallback to default)
+		1015, //CURSOR_VSIZE
+		1014, //CURSOR_HSIZE
+		1017, //CURSOR_BDIAGSI
+		1016, //CURSOR_FDIAGSI
+		1020, //CURSOR_MOVE
+		1015, //CURSOR_VSPLIT
+		1014, //CURSOR_HSPLIT
+		1003, //CURSOR_HELP
+	};
+	const int CURSOR_TYPE_NULL = 0;
+	MouseMode mouse_mode = MouseMode::MOUSE_MODE_VISIBLE;
+	CursorShape cursor_shape = CursorShape::CURSOR_ARROW;
+
 	bool use_apk_expansion;
 	bool secondary_gl_available = false;
 
@@ -67,6 +92,15 @@ class OS_Android : public OS_Unix {
 
 public:
 	static const char *ANDROID_EXEC_PATH;
+
+	virtual bool tts_is_speaking() const;
+	virtual bool tts_is_paused() const;
+	virtual Array tts_get_voices() const;
+
+	virtual void tts_speak(const String &p_text, const String &p_voice, int p_volume = 50, float p_pitch = 1.f, float p_rate = 1.f, int p_utterance_id = 0, bool p_interrupt = false);
+	virtual void tts_pause();
+	virtual void tts_resume();
+	virtual void tts_stop();
 
 	// functions used by main to initialize/deinitialize the OS
 	virtual int get_video_driver_count() const;
@@ -97,9 +131,6 @@ public:
 
 	virtual Error open_dynamic_library(const String p_path, void *&p_library_handle, bool p_also_set_library_path = false);
 
-	virtual void set_mouse_show(bool p_show);
-	virtual void set_mouse_grab(bool p_grab);
-	virtual bool is_mouse_grab_enabled() const;
 	virtual Point2 get_mouse_position() const;
 	virtual int get_mouse_button_state() const;
 	virtual void set_window_title(const String &p_title);
@@ -128,9 +159,17 @@ public:
 	virtual bool has_touchscreen_ui_hint() const;
 
 	virtual bool has_virtual_keyboard() const;
-	virtual void show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect = Rect2(), bool p_multiline = false, int p_max_input_length = -1, int p_cursor_start = -1, int p_cursor_end = -1);
+	virtual void show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect = Rect2(), VirtualKeyboardType p_type = KEYBOARD_TYPE_DEFAULT, int p_max_input_length = -1, int p_cursor_start = -1, int p_cursor_end = -1);
 	virtual void hide_virtual_keyboard();
 	virtual int get_virtual_keyboard_height() const;
+
+	void _set_cursor_shape_helper(CursorShape p_shape, bool force = false);
+	virtual void set_cursor_shape(CursorShape p_shape);
+	virtual CursorShape get_cursor_shape() const;
+	virtual void set_custom_mouse_cursor(const RES &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot);
+
+	virtual void set_mouse_mode(MouseMode p_mode);
+	virtual MouseMode get_mouse_mode() const;
 
 	void set_opengl_extensions(const char *p_gl_extensions);
 	void set_display_size(Size2 p_size);
@@ -179,6 +218,11 @@ public:
 	virtual String get_config_path() const;
 
 	virtual Error execute(const String &p_path, const List<String> &p_arguments, bool p_blocking = true, ProcessID *r_child_id = nullptr, String *r_pipe = nullptr, int *r_exitcode = nullptr, bool read_stderr = false, Mutex *p_pipe_mutex = nullptr, bool p_open_console = false);
+	virtual Error kill(const ProcessID &p_pid);
+
+	virtual void benchmark_begin_measure(const String &p_what);
+	virtual void benchmark_end_measure(const String &p_what);
+	virtual void benchmark_dump();
 
 	virtual bool _check_internal_feature_support(const String &p_feature);
 	OS_Android(GodotJavaWrapper *p_godot_java, GodotIOJavaWrapper *p_godot_io_java, bool p_use_apk_expansion);

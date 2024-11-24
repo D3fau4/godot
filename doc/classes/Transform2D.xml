@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="Transform2D" version="3.5" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="Transform2D" version="3.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		2D transformation (2×3 matrix).
 	</brief_description>
@@ -58,6 +58,13 @@
 			<description>
 				Returns a vector transformed (multiplied) by the inverse basis matrix.
 				This method does not account for translation (the origin vector).
+			</description>
+		</method>
+		<method name="determinant">
+			<return type="float" />
+			<description>
+				Returns the determinant of the basis matrix. If the basis is uniformly scaled, then its determinant equals the square of the scale factor.
+				A negative determinant means the basis was flipped, so one part of the scale is negative. A zero determinant means the basis isn't invertible, and is usually considered invalid.
 			</description>
 		</method>
 		<method name="get_origin">

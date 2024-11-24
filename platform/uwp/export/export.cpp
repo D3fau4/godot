@@ -1080,7 +1080,7 @@ public:
 		}
 	}
 
-	virtual bool can_export(const Ref<EditorExportPreset> &p_preset, String &r_error, bool &r_missing_templates) const {
+	virtual bool has_valid_export_configuration(const Ref<EditorExportPreset> &p_preset, String &r_error, bool &r_missing_templates) const {
 		String err;
 		bool valid = false;
 
@@ -1124,10 +1124,31 @@ public:
 		// Mono-enabled UWP builds using this path.
 		r_missing_templates = false; // Don't warn about those.
 		r_error = TTR("Godot's Mono version does not support the UWP platform. Use the standard build (no C# support) if you wish to target UWP.");
-		return false;
+#else
+		r_missing_templates = !valid;
+
+		if (!err.empty()) {
+			r_error = err;
+		}
 #endif // MODULE_MONO_ENABLED
 
-		r_missing_templates = !valid;
+		return valid;
+	}
+
+	virtual bool has_valid_project_configuration(const Ref<EditorExportPreset> &p_preset, String &r_error) const {
+		String err;
+		bool valid = true;
+
+#ifdef MODULE_MONO_ENABLED
+		// Don't warn about project configuration issue if this is a Mono build
+		// without custom-provided Mono-enabled UWP templates.
+		// We check if we have valid templates to decide if we should actually
+		// validate the config.
+		bool tmp;
+		if (!has_valid_export_configuration(p_preset, err, tmp)) {
+			return false;
+		}
+#endif // MODULE_MONO_ENABLED
 
 		// Validate the rest of the configuration.
 

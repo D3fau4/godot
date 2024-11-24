@@ -71,7 +71,7 @@ public:
 
 	void clear() {
 		num_items = 0;
-		set_dirty(true);
+		set_dirty(false);
 	}
 	bool is_full() const { return num_items >= MAX_ITEMS; }
 
@@ -88,7 +88,11 @@ public:
 			num_items++;
 			return id;
 		}
+#ifdef DEV_ENABLED
 		return -1;
+#else
+		ERR_FAIL_V_MSG(0, "BVH request_item error.");
+#endif
 	}
 };
 

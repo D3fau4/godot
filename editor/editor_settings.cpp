@@ -256,7 +256,6 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	{
 		String lang_hint = "en";
 		String host_lang = OS::get_singleton()->get_locale();
-		host_lang = TranslationServer::standardize_locale(host_lang);
 
 		// Some locales are not properly supported currently in Godot due to lack of font shaping
 		// (e.g. Arabic or Hindi), so even though we have work in progress translations for them,
@@ -264,6 +263,7 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 		const Vector<String> locales_to_skip = String("ar,bn,fa,he,hi,ml,si,ta,te,ur").split(",");
 
 		String best;
+		int best_score = 0;
 		const Vector<String> &locales = get_editor_locales();
 		for (int i = 0; i < locales.size(); i++) {
 			const String &locale = locales[i];
@@ -278,16 +278,17 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 			lang_hint += ",";
 			lang_hint += locale;
 
-			if (host_lang == locale) {
+			int score = TranslationServer::get_singleton()->compare_locales(host_lang, locale);
+			if (score > 0 && score >= best_score) {
 				best = locale;
-			}
-
-			if (best == String() && host_lang.begins_with(locale)) {
-				best = locale;
+				best_score = score;
+				if (score == 10) {
+					break; // Exact match, skip the rest.
+				}
 			}
 		}
 
-		if (best == String()) {
+		if (best_score == 0) {
 			best = "en";
 		}
 
@@ -337,6 +338,8 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	_initial_set("interface/editor/automatically_open_screenshots", true);
 	_initial_set("interface/editor/save_each_scene_on_quit", true); // Regression
 	_initial_set("interface/editor/quit_confirmation", true);
+	_initial_set("interface/editor/accept_dialog_cancel_ok_buttons", 0);
+	hints["interface/editor/accept_dialog_cancel_ok_buttons"] = PropertyInfo(Variant::INT, "interface/editor/accept_dialog_cancel_ok_buttons", PROPERTY_HINT_ENUM, vformat("Auto (%s),Cancel First,OK First", OS::get_singleton()->get_swap_ok_cancel() ? "OK First" : "Cancel First"), PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_RESTART_IF_CHANGED);
 
 	// Inspector
 	_initial_set("interface/inspector/max_array_dictionary_items_per_page", 20);
@@ -363,6 +366,16 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	hints["interface/theme/additional_spacing"] = PropertyInfo(Variant::REAL, "interface/theme/additional_spacing", PROPERTY_HINT_RANGE, "0,5,0.1", PROPERTY_USAGE_DEFAULT);
 	_initial_set("interface/theme/custom_theme", "");
 	hints["interface/theme/custom_theme"] = PropertyInfo(Variant::STRING, "interface/theme/custom_theme", PROPERTY_HINT_GLOBAL_FILE, "*.res,*.tres,*.theme", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_RESTART_IF_CHANGED);
+
+	// Touchscreen
+	bool has_touchscreen_ui = OS::get_singleton()->has_touchscreen_ui_hint();
+	_initial_set("interface/touchscreen/increase_scrollbar_touch_area", has_touchscreen_ui);
+	_initial_set("interface/touchscreen/enable_long_press_as_right_click", has_touchscreen_ui);
+	set_restart_if_changed("interface/touchscreen/enable_long_press_as_right_click", true);
+	_initial_set("interface/touchscreen/enable_pan_and_scale_gestures", has_touchscreen_ui);
+	set_restart_if_changed("interface/touchscreen/enable_pan_and_scale_gestures", true);
+	_initial_set("interface/touchscreen/scale_gizmo_handles", has_touchscreen_ui ? 3 : 1);
+	hints["interface/touchscreen/scale_gizmo_handles"] = PropertyInfo(Variant::REAL, "interface/touchscreen/scale_gizmo_handles", PROPERTY_HINT_RANGE, "1,5,1");
 
 	// Scene tabs
 	_initial_set("interface/scene_tabs/show_thumbnail_on_hover", true);
@@ -466,7 +479,6 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	_initial_set("text_editor/files/auto_reload_scripts_on_external_change", false);
 
 	// Tools
-	_initial_set("text_editor/tools/create_signal_callbacks", true);
 	_initial_set("text_editor/tools/sort_members_outline_alphabetically", false);
 
 	// Cursor
@@ -556,7 +568,7 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	_initial_set("editors/3d/navigation/invert_x_axis", false);
 	hints["editors/3d/navigation/navigation_scheme"] = PropertyInfo(Variant::INT, "editors/3d/navigation/navigation_scheme", PROPERTY_HINT_ENUM, "Godot,Maya,Modo");
 	_initial_set("editors/3d/navigation/zoom_style", 0);
-	hints["editors/3d/navigation/zoom_style"] = PropertyInfo(Variant::INT, "editors/3d/navigation/zoom_style", PROPERTY_HINT_ENUM, "Vertical, Horizontal");
+	hints["editors/3d/navigation/zoom_style"] = PropertyInfo(Variant::INT, "editors/3d/navigation/zoom_style", PROPERTY_HINT_ENUM, "Vertical,Horizontal");
 
 	_initial_set("editors/3d/navigation/emulate_numpad", false);
 	_initial_set("editors/3d/navigation/emulate_3_button_mouse", false);
@@ -610,7 +622,7 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	_initial_set("editors/2d/pan_speed", 20);
 
 	// Polygon editor
-	_initial_set("editors/poly_editor/point_grab_radius", 8);
+	_initial_set("editors/poly_editor/point_grab_radius", has_touchscreen_ui ? 32 : 8);
 	_initial_set("editors/poly_editor/show_previous_outline", true);
 
 	// Animation
@@ -628,6 +640,7 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	/* Run */
 
 	// Window placement
+#ifndef ANDROID_ENABLED
 	_initial_set("run/window_placement/rect", 1);
 	hints["run/window_placement/rect"] = PropertyInfo(Variant::INT, "run/window_placement/rect", PROPERTY_HINT_ENUM, "Top Left,Centered,Custom Position,Force Maximized,Force Fullscreen");
 	String screen_hints = "Same as Editor,Previous Monitor,Next Monitor";
@@ -637,6 +650,11 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	_initial_set("run/window_placement/rect_custom_position", Vector2());
 	_initial_set("run/window_placement/screen", 0);
 	hints["run/window_placement/screen"] = PropertyInfo(Variant::INT, "run/window_placement/screen", PROPERTY_HINT_ENUM, screen_hints);
+#endif
+	// Should match the ANDROID_WINDOW_* constants in 'platform/android/java/editor/src/main/java/org/godotengine/editor/GodotEditor.kt'
+	String android_window_hints = "Auto (based on screen size),Same as Editor,Side-by-side with Editor";
+	_initial_set("run/window_placement/android_window", 0);
+	hints["run/window_placement/android_window"] = PropertyInfo(Variant::INT, "run/window_placement/android_window", PROPERTY_HINT_ENUM, android_window_hints);
 
 	// Auto save
 	_initial_set("run/auto_save/save_before_running", true);

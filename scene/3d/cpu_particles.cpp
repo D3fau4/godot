@@ -209,14 +209,14 @@ String CPUParticles::get_configuration_warning() const {
 		mesh_found = true;
 		for (int j = 0; j < get_mesh()->get_surface_count(); j++) {
 			anim_material_found = Object::cast_to<ShaderMaterial>(get_mesh()->surface_get_material(j).ptr()) != nullptr;
-			SpatialMaterial *spat = Object::cast_to<SpatialMaterial>(get_mesh()->surface_get_material(j).ptr());
-			anim_material_found = anim_material_found || (spat && spat->get_billboard_mode() == SpatialMaterial::BILLBOARD_PARTICLES);
+			Material3D *spat = Object::cast_to<Material3D>(get_mesh()->surface_get_material(j).ptr());
+			anim_material_found = anim_material_found || (spat && spat->get_billboard_mode() == Material3D::BILLBOARD_PARTICLES);
 		}
 	}
 
 	anim_material_found = anim_material_found || Object::cast_to<ShaderMaterial>(get_material_override().ptr()) != nullptr;
-	SpatialMaterial *spat = Object::cast_to<SpatialMaterial>(get_material_override().ptr());
-	anim_material_found = anim_material_found || (spat && spat->get_billboard_mode() == SpatialMaterial::BILLBOARD_PARTICLES);
+	Material3D *spat = Object::cast_to<Material3D>(get_material_override().ptr());
+	anim_material_found = anim_material_found || (spat && spat->get_billboard_mode() == Material3D::BILLBOARD_PARTICLES);
 
 	if (!mesh_found) {
 		if (warnings != String()) {
@@ -900,14 +900,6 @@ void CPUParticles::_particles_process(float p_delta) {
 				p.velocity.z = 0.0;
 				p.transform.origin.z = 0.0;
 			}
-
-			// Teleport if starting a new particle, so
-			// we don't get a streak from the old position
-			// to this new start.
-			if (_interpolated) {
-				p.copy_to(particles_prev[i]);
-			}
-
 		} else if (!p.active) {
 			continue;
 		} else if (p.time > p.lifetime) {
@@ -1001,9 +993,8 @@ void CPUParticles::_particles_process(float p_delta) {
 
 		//scale by scale
 		float base_scale = tex_scale * Math::lerp(parameters[PARAM_SCALE], 1.0f, p.scale_rand * randomness[PARAM_SCALE]);
-		if (base_scale < 0.000001) {
-			base_scale = 0.000001;
-		}
+		// Prevent zero scale (which can cause rendering issues).
+		base_scale = SGN(base_scale) * MAX(Math::abs(base_scale), 0.000001);
 
 		p.transform.basis.scale(Vector3(1, 1, 1) * base_scale);
 
@@ -1013,6 +1004,13 @@ void CPUParticles::_particles_process(float p_delta) {
 		}
 
 		p.transform.origin += p.velocity * local_delta;
+
+		// Teleport if starting a new particle, so
+		// we don't get a streak from the old position
+		// to this new start.
+		if (restart && _interpolated) {
+			p.copy_to(particles_prev[i]);
+		}
 	}
 }
 
@@ -1514,7 +1512,7 @@ void CPUParticles::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_update_render_thread"), &CPUParticles::_update_render_thread);
 
 	ADD_GROUP("Emission Shape", "emission_");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "emission_shape", PROPERTY_HINT_ENUM, "Point,Sphere,Box,Points,Directed Points, Ring", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_UPDATE_ALL_IF_MODIFIED), "set_emission_shape", "get_emission_shape");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "emission_shape", PROPERTY_HINT_ENUM, "Point,Sphere,Box,Points,Directed Points,Ring", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_UPDATE_ALL_IF_MODIFIED), "set_emission_shape", "get_emission_shape");
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "emission_sphere_radius", PROPERTY_HINT_RANGE, "0.01,128,0.01,or_greater"), "set_emission_sphere_radius", "get_emission_sphere_radius");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "emission_box_extents"), "set_emission_box_extents", "get_emission_box_extents");
 	ADD_PROPERTY(PropertyInfo(Variant::POOL_VECTOR3_ARRAY, "emission_points"), "set_emission_points", "get_emission_points");
@@ -1567,7 +1565,7 @@ void CPUParticles::_bind_methods() {
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "angle_random", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_param_randomness", "get_param_randomness", PARAM_ANGLE);
 	ADD_PROPERTYI(PropertyInfo(Variant::OBJECT, "angle_curve", PROPERTY_HINT_RESOURCE_TYPE, "Curve"), "set_param_curve", "get_param_curve", PARAM_ANGLE);
 	ADD_GROUP("Scale", "");
-	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "scale_amount", PROPERTY_HINT_RANGE, "0,1000,0.01,or_greater"), "set_param", "get_param", PARAM_SCALE);
+	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "scale_amount", PROPERTY_HINT_RANGE, "-1000,1000,0.01,or_greater"), "set_param", "get_param", PARAM_SCALE);
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "scale_amount_random", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_param_randomness", "get_param_randomness", PARAM_SCALE);
 	ADD_PROPERTYI(PropertyInfo(Variant::OBJECT, "scale_amount_curve", PROPERTY_HINT_RESOURCE_TYPE, "Curve"), "set_param_curve", "get_param_curve", PARAM_SCALE);
 	ADD_GROUP("Color", "");
@@ -1583,8 +1581,8 @@ void CPUParticles::_bind_methods() {
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "anim_speed", PROPERTY_HINT_RANGE, "0,128,0.01,or_greater"), "set_param", "get_param", PARAM_ANIM_SPEED);
 	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "anim_speed_random", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_param_randomness", "get_param_randomness", PARAM_ANIM_SPEED);
 	ADD_PROPERTYI(PropertyInfo(Variant::OBJECT, "anim_speed_curve", PROPERTY_HINT_RESOURCE_TYPE, "Curve"), "set_param_curve", "get_param_curve", PARAM_ANIM_SPEED);
-	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "anim_offset", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_param", "get_param", PARAM_ANIM_OFFSET);
-	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "anim_offset_random", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_param_randomness", "get_param_randomness", PARAM_ANIM_OFFSET);
+	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "anim_offset", PROPERTY_HINT_RANGE, "0,1,0.0001"), "set_param", "get_param", PARAM_ANIM_OFFSET);
+	ADD_PROPERTYI(PropertyInfo(Variant::REAL, "anim_offset_random", PROPERTY_HINT_RANGE, "0,1,0.0001"), "set_param_randomness", "get_param_randomness", PARAM_ANIM_OFFSET);
 	ADD_PROPERTYI(PropertyInfo(Variant::OBJECT, "anim_offset_curve", PROPERTY_HINT_RESOURCE_TYPE, "Curve"), "set_param_curve", "get_param_curve", PARAM_ANIM_OFFSET);
 
 	BIND_ENUM_CONSTANT(PARAM_INITIAL_LINEAR_VELOCITY);

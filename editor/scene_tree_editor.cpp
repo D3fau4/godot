@@ -36,11 +36,12 @@
 #include "editor/node_dock.h"
 #include "editor/plugins/animation_player_editor_plugin.h"
 #include "editor/plugins/canvas_item_editor_plugin.h"
+#include "scene/3d/lod_manager.h"
 #include "scene/gui/label.h"
 #include "scene/main/viewport.h"
 #include "scene/resources/packed_scene.h"
 
-Node *SceneTreeEditor::get_scene_node() {
+Node *SceneTreeEditor::get_scene_node() const {
 	ERR_FAIL_COND_V(!is_inside_tree(), nullptr);
 
 	return get_tree()->get_edited_scene_root();
@@ -162,9 +163,9 @@ void SceneTreeEditor::_toggle_visible(Node *p_node) {
 	}
 }
 
-bool SceneTreeEditor::_add_nodes(Node *p_node, TreeItem *p_parent, bool p_scroll_to_selected) {
+void SceneTreeEditor::_add_nodes(Node *p_node, TreeItem *p_parent, bool p_disable_visibility) {
 	if (!p_node) {
-		return false;
+		return;
 	}
 
 	// only owned nodes are editable, since nodes can create their own (manually owned) child nodes,
@@ -177,7 +178,7 @@ bool SceneTreeEditor::_add_nodes(Node *p_node, TreeItem *p_parent, bool p_scroll
 			part_of_subscene = true;
 			//allow
 		} else {
-			return false;
+			return;
 		}
 	} else {
 		part_of_subscene = p_node != get_scene_node() && get_scene_node()->get_scene_inherited_state().is_valid() && get_scene_node()->get_scene_inherited_state()->find_node_by_path(get_scene_node()->get_path_to(p_node)) >= 0;
@@ -241,7 +242,7 @@ bool SceneTreeEditor::_add_nodes(Node *p_node, TreeItem *p_parent, bool p_scroll
 		}
 	} else if (part_of_subscene) {
 		if (valid_types.size() == 0) {
-			item->set_custom_color(0, get_color("disabled_font_color", "Editor"));
+			item->set_custom_color(0, get_color("warning_color", "Editor"));
 		}
 	} else if (marked.has(p_node)) {
 		String node_name = p_node->get_name();
@@ -343,10 +344,19 @@ bool SceneTreeEditor::_add_nodes(Node *p_node, TreeItem *p_parent, bool p_scroll
 
 		Ref<Script> script = p_node->get_script();
 		if (!script.is_null()) {
-			item->add_button(0, get_icon("Script", "EditorIcons"), BUTTON_SCRIPT, false, TTR("Open Script:") + " " + script->get_path());
-			if (EditorNode::get_singleton()->get_object_custom_type_base(p_node) == script) {
-				item->set_button_color(0, item->get_button_count(0) - 1, Color(1, 1, 1, 0.5));
+			String additional_notes;
+			Color button_color = Color(1, 1, 1);
+			// Can't set tooltip after adding button, need to do it before.
+			if (script->is_tool()) {
+				additional_notes += "\n" + TTR("This script is currently running in the editor.");
+				button_color = get_color("accent_color", "Editor");
 			}
+			if (EditorNode::get_singleton()->get_object_custom_type_base(p_node) == script) {
+				additional_notes += "\n" + TTR("This script is a custom type.");
+				button_color.a = 0.5;
+			}
+			item->add_button(0, get_icon("Script", "EditorIcons"), BUTTON_SCRIPT, false, TTR("Open Script:") + " " + script->get_path() + additional_notes);
+			item->set_button_color(0, item->get_button_count(0) - 1, button_color);
 		}
 
 		if (p_node->is_class("CanvasItem")) {
@@ -357,7 +367,7 @@ bool SceneTreeEditor::_add_nodes(Node *p_node, TreeItem *p_parent, bool p_scroll
 
 			bool is_grouped = p_node->has_meta("_edit_group_");
 			if (is_grouped) {
-				item->add_button(0, get_icon("Group", "EditorIcons"), BUTTON_GROUP, false, TTR("Children are not selectable.\nClick to make selectable."));
+				item->add_button(0, get_icon("Group", "EditorIcons"), BUTTON_GROUP, false, TTR("Children are not selectable.\nClick to make them selectable."));
 			}
 
 			bool v = p_node->call("is_visible");
@@ -391,14 +401,14 @@ bool SceneTreeEditor::_add_nodes(Node *p_node, TreeItem *p_parent, bool p_scroll
 
 			bool is_grouped = p_node->has_meta("_edit_group_");
 			if (is_grouped) {
-				item->add_button(0, get_icon("Group", "EditorIcons"), BUTTON_GROUP, false, TTR("Children are not selectable.\nClick to make selectable."));
+				item->add_button(0, get_icon("Group", "EditorIcons"), BUTTON_GROUP, false, TTR("Children are not selectable.\nClick to make them selectable."));
 			}
 
 			bool v = p_node->call("is_visible");
 			if (v) {
-				item->add_button(0, get_icon("GuiVisibilityVisible", "EditorIcons"), BUTTON_VISIBILITY, false, TTR("Toggle Visibility"));
+				item->add_button(0, get_icon("GuiVisibilityVisible", "EditorIcons"), BUTTON_VISIBILITY, p_disable_visibility, TTR("Toggle Visibility"));
 			} else {
-				item->add_button(0, get_icon("GuiVisibilityHidden", "EditorIcons"), BUTTON_VISIBILITY, false, TTR("Toggle Visibility"));
+				item->add_button(0, get_icon("GuiVisibilityHidden", "EditorIcons"), BUTTON_VISIBILITY, p_disable_visibility, TTR("Toggle Visibility"));
 			}
 
 			if (!p_node->is_connected("visibility_changed", this, "_node_visibility_changed")) {
@@ -415,29 +425,25 @@ bool SceneTreeEditor::_add_nodes(Node *p_node, TreeItem *p_parent, bool p_scroll
 		}
 	}
 
-	bool scroll = false;
-
 	if (editor_selection) {
 		if (editor_selection->is_selected(p_node)) {
 			item->select(0);
-			scroll = p_scroll_to_selected;
 		}
 	}
 
 	if (selected == p_node) {
 		if (!editor_selection) {
 			item->select(0);
-			scroll = p_scroll_to_selected;
 		}
 		item->set_as_cursor(0);
 	}
 
-	bool keep = (filter.is_subsequence_ofi(String(p_node->get_name())));
+	// In some cases we want to disable visibility control by the user
+	// for automatically visibility-controlled children.
+	bool disable_visibility = p_node->is_class("LOD") && LODManager::is_enabled();
 
 	for (int i = 0; i < p_node->get_child_count(); i++) {
-		bool child_keep = _add_nodes(p_node->get_child(i), item, p_scroll_to_selected);
-
-		keep = keep || child_keep;
+		_add_nodes(p_node->get_child(i), item, disable_visibility);
 	}
 
 	if (valid_types.size()) {
@@ -450,26 +456,9 @@ bool SceneTreeEditor::_add_nodes(Node *p_node, TreeItem *p_parent, bool p_scroll
 		}
 
 		if (!valid) {
-			//item->set_selectable(0,marked_selectable);
 			item->set_custom_color(0, get_color("disabled_font_color", "Editor"));
 			item->set_selectable(0, false);
 		}
-	}
-
-	if (!keep) {
-		if (editor_selection) {
-			Node *n = get_node(item->get_metadata(0));
-			if (n) {
-				editor_selection->remove_node(n);
-			}
-		}
-		memdelete(item);
-		return false;
-	} else {
-		if (scroll) {
-			tree->scroll_to_item(item);
-		}
-		return true;
 	}
 }
 
@@ -587,13 +576,151 @@ void SceneTreeEditor::_update_tree(bool p_scroll_to_selected) {
 	updating_tree = true;
 	tree->clear();
 	if (get_scene_node()) {
-		_add_nodes(get_scene_node(), nullptr, p_scroll_to_selected);
+		_add_nodes(get_scene_node(), nullptr);
 		last_hash = hash_djb2_one_64(0);
 		_compute_hash(get_scene_node(), last_hash);
 	}
 	updating_tree = false;
-
 	tree_dirty = false;
+
+	if (!filter.strip_edges().empty()) {
+		_update_filter(nullptr, p_scroll_to_selected);
+	}
+}
+
+bool SceneTreeEditor::_update_filter(TreeItem *p_parent, bool p_scroll_to_selected) {
+	if (!p_parent) {
+		p_parent = tree->get_root();
+		filter_term_warning.clear();
+	}
+	if (!p_parent) {
+		// Tree is empty, nothing to do here.
+		return false;
+	}
+
+	bool keep_for_children = false;
+
+	// Get the list of children ahead of time, as the list may be invalidated by deleting one of them.
+	LocalVector<TreeItem *> children;
+	for (TreeItem *child = p_parent->get_children(); child; child = child->get_next()) {
+		children.push_back(child);
+	}
+
+	for (uint32_t n = 0; n < children.size(); n++) {
+		// Always keep if at least one of the children are kept.
+		keep_for_children = _update_filter(children[n], p_scroll_to_selected) || keep_for_children;
+	}
+
+	// Now find other reasons to keep this Node, too.
+	Vector<String> terms = filter.to_lower().split_spaces();
+	bool keep = _item_matches_all_terms(p_parent, terms);
+
+	if (keep_for_children || keep) {
+		if (keep_for_children) {
+			if (!keep) {
+				const Color original_color = p_parent->get_custom_color(0);
+				const Color disabled_color = get_color("disabled_font_color", "Editor");
+				if (original_color == Color()) {
+					p_parent->set_custom_color(0, disabled_color);
+				} else {
+					p_parent->set_custom_color(0, original_color.linear_interpolate(disabled_color, 0.5));
+					p_parent->set_selectable(0, false);
+					p_parent->deselect(0);
+				}
+			}
+		}
+	}
+
+	if (editor_selection) {
+		Node *n = get_node_or_null(p_parent->get_metadata(0));
+		if (keep) {
+			if (p_scroll_to_selected && n && editor_selection->is_selected(n)) {
+				tree->scroll_to_item(p_parent);
+			}
+		} else {
+			if (n && p_parent->is_selected(0)) {
+				editor_selection->remove_node(n);
+				p_parent->deselect(0);
+			}
+		}
+	}
+
+	if (!(keep || keep_for_children)) {
+		memdelete(p_parent);
+	}
+
+	return keep || keep_for_children;
+}
+
+bool SceneTreeEditor::_item_matches_all_terms(TreeItem *p_item, Vector<String> p_terms) {
+	if (p_terms.empty()) {
+		return true;
+	}
+
+	for (int i = 0; i < p_terms.size(); i++) {
+		String term = p_terms[i];
+
+		// Recognise special filter.
+		if (term.find(":") > -1 && !term.get_slicec(':', 0).empty()) {
+			String parameter = term.get_slicec(':', 0);
+			String argument = term.get_slicec(':', 1);
+
+			if (parameter == "type" || parameter == "t") {
+				// Filter by Type.
+				String type = get_node(p_item->get_metadata(0))->get_class();
+				bool term_in_inherited_class = false;
+				// Every Node is is a Node, duh!
+				while (type != "Node") {
+					if (type.to_lower().find(argument) > -1) {
+						term_in_inherited_class = true;
+						break;
+					}
+
+					type = ClassDB::get_parent_class(type);
+				}
+				if (!term_in_inherited_class) {
+					return false;
+				}
+			} else if (parameter == "group" || parameter == "g") {
+				// Filter by Group.
+				Node *node = get_node(p_item->get_metadata(0));
+
+				if (argument.empty()) {
+					// When argument is empty, match all Nodes belonging to any exposed group.
+					if (node->get_persistent_group_count() == 0) {
+						return false;
+					}
+				} else {
+					List<Node::GroupInfo> group_info_list;
+					node->get_groups(&group_info_list);
+
+					bool term_in_groups = false;
+					for (int j = 0; j < group_info_list.size(); j++) {
+						if (!group_info_list[j].persistent) {
+							continue; // Ignore internal groups.
+						}
+						if (String(group_info_list[j].name).to_lower().find(argument) > -1) {
+							term_in_groups = true;
+							break;
+						}
+					}
+					if (!term_in_groups) {
+						return false;
+					}
+				}
+			} else if (filter_term_warning.empty()) {
+				filter_term_warning = vformat(TTR("\"%s\" is not a known filter."), parameter);
+				continue;
+			}
+		} else {
+			// Default.
+			if (p_item->get_text(0).to_lower().find(term) == -1) {
+				return false;
+			}
+		}
+	}
+
+	return true;
 }
 
 void SceneTreeEditor::_compute_hash(Node *p_node, uint64_t &hash) {
@@ -885,6 +1012,10 @@ String SceneTreeEditor::get_filter() const {
 	return filter;
 }
 
+String SceneTreeEditor::get_filter_term_warning() const {
+	return filter_term_warning;
+}
+
 void SceneTreeEditor::set_display_foreign_nodes(bool p_display) {
 	display_foreign = p_display;
 	_update_tree();
@@ -986,11 +1117,8 @@ Variant SceneTreeEditor::get_drag_data_fw(const Point2 &p_point, Control *p_from
 
 		Node *n = get_node(np);
 		if (n) {
-			// Only allow selection if not part of an instanced scene.
-			if (!n->get_owner() || n->get_owner() == get_scene_node() || n->get_owner()->get_filename() == String()) {
-				selected.push_back(n);
-				icons.push_back(next->get_icon(0));
-			}
+			selected.push_back(n);
+			icons.push_back(next->get_icon(0));
 		}
 		next = tree->get_next_selected(next);
 	}
@@ -1101,7 +1229,21 @@ bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_d
 		}
 	}
 
-	return String(d["type"]) == "nodes" && filter == String();
+	if (filter.empty() && String(d["type"]) == "nodes") {
+		Array nodes = d["nodes"];
+
+		for (int i = 0; i < nodes.size(); i++) {
+			Node *n = get_node(nodes[i]);
+			// Only allow selection if not part of an instanced scene.
+			if (n && n->get_owner() && n->get_owner() != get_scene_node() && !n->get_owner()->get_filename().empty()) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	return false;
 }
 void SceneTreeEditor::drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) {
 	if (!can_drop_data_fw(p_point, p_data, p_from)) {

@@ -156,11 +156,14 @@ void ParallaxLayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_mirroring"), &ParallaxLayer::get_mirroring);
 
 	ADD_GROUP("Motion", "motion_");
-	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "motion_scale"), "set_motion_scale", "get_motion_scale");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "motion_scale", PROPERTY_HINT_LINK), "set_motion_scale", "get_motion_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "motion_offset"), "set_motion_offset", "get_motion_offset");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "motion_mirroring"), "set_mirroring", "get_mirroring");
 }
 
 ParallaxLayer::ParallaxLayer() {
 	motion_scale = Size2(1, 1);
+
+	// ParallaxLayer is always updated every frame so there is no need to interpolate.
+	set_physics_interpolation_mode(Node::PHYSICS_INTERPOLATION_MODE_OFF);
 }

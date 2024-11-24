@@ -49,6 +49,7 @@ class SpinBox : public Range {
 	virtual void _value_changed(double);
 	String prefix;
 	String suffix;
+	double custom_arrow_step = 0.0;
 
 	void _line_edit_input(const Ref<InputEvent> &p_event);
 
@@ -60,6 +61,7 @@ class SpinBox : public Range {
 		float diff_y = 0;
 	} drag;
 
+	void _line_edit_focus_enter();
 	void _line_edit_focus_exit();
 
 	inline void _adjust_width_for_icon(const Ref<Texture> &icon);
@@ -89,6 +91,8 @@ public:
 	String get_prefix() const;
 
 	void apply();
+	void set_custom_arrow_step(const double p_custom_arrow_step);
+	double get_custom_arrow_step() const;
 
 	SpinBox();
 };
