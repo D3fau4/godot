@@ -1,27 +1,6 @@
 name: 🏁 Windows Builds
 on:
-  push:
-    paths-ignore:
-      - ".github/workflows/**"
-      - "platform/**"
-      - "!.github/workflows/windows_builds.yml"
-      - "!platform/register_platform_apis.h"
-      - "!platform/SCsub"
-      - "!platform/server/**"
-      - "!platform/uwp/**"
-      - "!platform/windows/**"
-      - "!platform/*/export/**"
-  pull_request:
-    paths-ignore:
-      - ".github/workflows/**"
-      - "platform/**"
-      - "!.github/workflows/windows_builds.yml"
-      - "!platform/register_platform_apis.h"
-      - "!platform/SCsub"
-      - "!platform/server/**"
-      - "!platform/uwp/**"
-      - "!platform/windows/**"
-      - "!platform/*/export/**"
+  workflow_call:
 
 # Global Settings
 # SCONS_CACHE for windows must be set in the build environment
@@ -56,10 +35,10 @@ jobs:
             tools: false
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Setup Godot build cache
-        uses: ./.github/actions/godot-cache
+      - name: Restore Godot build cache
+        uses: ./.github/actions/godot-cache-restore
         with:
           cache-name: ${{ matrix.cache-name }}
         continue-on-error: true
@@ -77,6 +56,12 @@ jobs:
           platform: windows
           target: ${{ matrix.target }}
           tools: ${{ matrix.tools }}
+
+      - name: Save Godot build cache
+        uses: ./.github/actions/godot-cache-save
+        with:
+          cache-name: ${{ matrix.cache-name }}
+        continue-on-error: true
 
       - name: Prepare artifact
         run: |

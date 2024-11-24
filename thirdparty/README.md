@@ -35,8 +35,13 @@ Includes some patches in the `patches` folder which have been sent upstream.
 ## certs
 
 - Upstream: Mozilla, via https://github.com/bagder/ca-bundle
-- Version: git (b2f7415648411b6fd7c298c6c92d6552f0165f60, 2022)
+- Version: git (4d3fe6683f651d96be1bbef316b201e9b33b274d, 2024),
+  generated from mozilla-release changeset b8ea2342548b8571e58f9176d9555ccdb5ec199f
 - License: MPL 2.0
+
+Files extracted from upstream source:
+
+- `ca-bundle.crt` renamed to `ca-certificates.crt`
 
 
 ## cvtt
@@ -73,7 +78,7 @@ commits.
 ## enet
 
 - Upstream: http://enet.bespin.org
-- Version: 1.3.17 (e0e7045b7e056b454b5093cb34df49dc4cee0bee, 2020)
+- Version: git (ea4607a90dbfbcf4da2669ea998585253d8e70b1, 2023)
 - License: MIT
 
 Files extracted from upstream source:
@@ -187,14 +192,14 @@ Files extracted from upstream source:
 ## libpng
 
 - Upstream: http://libpng.org/pub/png/libpng.html
-- Version: 1.6.38 (0a158f3506502dfa23edfc42790dfaed82efba17, 2022)
+- Version: 1.6.43 (ed217e3e601d8e462f7fd1e04bed43ac42212429, 2024)
 - License: libpng/zlib
 
 Files extracted from upstream source:
 
-- all .c and .h files of the main directory, except from
-  `example.c` and `pngtest.c`
-- the arm/ folder
+- All `.c` and `.h` files of the main directory, apart from `example.c` and
+  `pngtest.c`
+- The `arm/` folder
 - `scripts/pnglibconf.h.prebuilt` as `pnglibconf.h`
 - `LICENSE`
 
@@ -267,7 +272,7 @@ from the Android NDK r18.
 ## libwebp
 
 - Upstream: https://chromium.googlesource.com/webm/libwebp/
-- Version: 1.2.4 (0d1f12546bd803099a60c070517a552483f3790e, 2022)
+- Version: 1.3.2 (ca332209cb5567c9b249c86788cb2dbf8847e760, 2023)
 - License: BSD-3-Clause
 
 Files extracted from upstream source:
@@ -279,17 +284,18 @@ Files extracted from upstream source:
 ## mbedtls
 
 - Upstream: https://github.com/Mbed-TLS/mbedtls
-- Version: 2.18.2 (89f040a5c938985c5f30728baed21e49d0846a53, 2022)
+- Version: 2.28.8 (5a764e5555c64337ed17444410269ff21cb617b1, 2024)
 - License: Apache 2.0
 
 File extracted from upstream release tarball:
 
-- All `*.h` from `include/mbedtls/` to `thirdparty/mbedtls/include/mbedtls/` except `config_psa.h` and `psa_util.h`.
-- All `*.c` and `*.h` from `library/` to `thirdparty/mbedtls/library/` except those starting with `psa_*`.
-- The `LICENSE` file.
-- Applied the patch in `patches/1453.diff` (upstream PR:
-  https://github.com/ARMmbed/mbedtls/pull/1453).
-  Applied the patch in `patches/windows-arm64-hardclock.diff`
+- All `.h` from `include/mbedtls/` to `thirdparty/mbedtls/include/mbedtls/`
+  except `config_psa.h` and `psa_util.h`
+- All `.c` and `.h` from `library/` to `thirdparty/mbedtls/library/` except
+  those starting with `psa_*`
+- The `LICENSE` file (edited to keep only the Apache 2.0 variant)
+- Applied the patch `windows-arm64-hardclock.diff` to fix Windows ARM64 build
+  Applied the patch `windows-entropy-bcrypt.diff` to fix Windows Store support
 - Added 2 files `godot_core_mbedtls_platform.c` and `godot_core_mbedtls_config.h`
   providing configuration for light bundling with core.
 
@@ -310,7 +316,7 @@ Files extracted from upstream repository:
 ## miniupnpc
 
 - Upstream: https://github.com/miniupnp/miniupnp
-- Version: 2.2.4 (7d1d8bc3868b08ad003bad235eee57562b95b76d, 2022)
+- Version: 2.2.5 (58837ef586278d18cbebee50be758835ed4be79a, 2023)
 - License: BSD-3-Clause
 
 Files extracted from upstream source:
@@ -328,7 +334,7 @@ that file when upgrading.
 ## minizip
 
 - Upstream: https://www.zlib.net
-- Version: 1.2.13 (zlib contrib, 2022)
+- Version: 1.3.1 (zlib contrib, 2024)
 - License: zlib
 
 Files extracted from the upstream source:
@@ -538,7 +544,7 @@ comments and a patch is provided in the squish/ folder.
 ## tinyexr
 
 - Upstream: https://github.com/syoyo/tinyexr
-- Version: 1.0.1 (67010eae802211202d0797f4df2b809f4ba7442c, 2021)
+- Version: 1.0.8 (6c8742cc8145c8f629698cd8248900990946d6b1, 2024)
 - License: BSD-3-Clause
 
 Files extracted from upstream source:
@@ -598,12 +604,12 @@ Files extracted from upstream source:
 ## zlib
 
 - Upstream: https://www.zlib.net
-- Version: 1.2.13 (2022)
+- Version: 1.3.1 (2024)
 - License: zlib
 
 Files extracted from upstream source:
 
-- All `*.c` and `*.h` files
+- All `*.c` and `*.h` files, minus `infback.c`
 - `LICENSE`
 
 

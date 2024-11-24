@@ -144,7 +144,7 @@ def configure(env):
     env.AddMethod(create_template_zip, "CreateTemplateZip")
 
     # Closure compiler extern and support for ecmascript specs (const, let, etc).
-    env["ENV"]["EMCC_CLOSURE_ARGS"] = "--language_in ECMASCRIPT6"
+    env["ENV"]["EMCC_CLOSURE_ARGS"] = "--language_in ECMASCRIPT_2021"
 
     env["CC"] = "emcc"
     env["CXX"] = "em++"
@@ -168,8 +168,16 @@ def configure(env):
     env["LIBPREFIXES"] = ["$LIBPREFIX"]
     env["LIBSUFFIXES"] = ["$LIBSUFFIX"]
 
+    # Get version info for checks below.
+    cc_semver = tuple(get_compiler_version(env) or (3, 1, 14))
+
     env.Prepend(CPPPATH=["#platform/javascript"])
     env.Append(CPPDEFINES=["JAVASCRIPT_ENABLED", "UNIX_ENABLED"])
+
+    if cc_semver >= (3, 1, 25):
+        env.Append(LINKFLAGS=["-s", "STACK_SIZE=5MB"])
+    else:
+        env.Append(LINKFLAGS=["-s", "TOTAL_STACK=5MB"])
 
     if env["javascript_eval"]:
         env.Append(CPPDEFINES=["JAVASCRIPT_EVAL_ENABLED"])
@@ -179,14 +187,22 @@ def configure(env):
         env.Append(CPPDEFINES=["PTHREAD_NO_RENAME"])
         env.Append(CCFLAGS=["-s", "USE_PTHREADS=1"])
         env.Append(LINKFLAGS=["-s", "USE_PTHREADS=1"])
+        env.Append(LINKFLAGS=["-s", "DEFAULT_PTHREAD_STACK_SIZE=2MB"])
         env.Append(LINKFLAGS=["-s", "PTHREAD_POOL_SIZE=8"])
         env.Append(LINKFLAGS=["-s", "WASM_MEM_MAX=2048MB"])
         env.extra_suffix = ".threads" + env.extra_suffix
     else:
         env.Append(CPPDEFINES=["NO_THREADS"])
 
+    if env["use_thinlto"] or env["use_lto"]:
+        # Workaround https://github.com/emscripten-core/emscripten/issues/19781.
+        if cc_semver >= (3, 1, 42) and cc_semver < (3, 1, 46):
+            env.Append(LINKFLAGS=["-Wl,-u,scalbnf"])
+        # Workaround https://github.com/emscripten-core/emscripten/issues/16836.
+        if cc_semver >= (3, 1, 47):
+            env.Append(LINKFLAGS=["-Wl,-u,_emscripten_run_callback_on_thread"])
+
     if env["gdnative_enabled"]:
-        cc_semver = tuple(get_compiler_version(env))
         if cc_semver < (2, 0, 10):
             print("GDNative support requires emscripten >= 2.0.10, detected: %s.%s.%s" % cc_semver)
             sys.exit(255)
@@ -198,6 +214,10 @@ def configure(env):
         # Weak symbols are broken upstream: https://github.com/emscripten-core/emscripten/issues/12819
         env.Append(CPPDEFINES=["ZSTD_HAVE_WEAK_SYMBOLS=0"])
         env.extra_suffix = ".gdnative" + env.extra_suffix
+
+    # WASM_BIGINT is needed since emscripten ≥ 3.1.41
+    if cc_semver >= (3, 1, 41):
+        env.Append(LINKFLAGS=["-s", "WASM_BIGINT"])
 
     # Reduce code size by generating less support code (e.g. skip NodeJS support).
     env.Append(LINKFLAGS=["-s", "ENVIRONMENT=web,worker"])
@@ -212,6 +232,11 @@ def configure(env):
 
     # This setting just makes WebGL 2 APIs available, it does NOT disable WebGL 1.
     env.Append(LINKFLAGS=["-s", "USE_WEBGL2=1"])
+    # Breaking change since emscripten 3.1.51
+    # https://github.com/emscripten-core/emscripten/blob/main/ChangeLog.md#3151---121323
+    if cc_semver >= (3, 1, 51):
+        # Enables the use of *glGetProcAddress()
+        env.Append(LINKFLAGS=["-s", "GL_ENABLE_GET_PROC_ADDRESS=1"])
 
     # Do not call main immediately when the support code is ready.
     env.Append(LINKFLAGS=["-s", "INVOKE_RUN=0"])
