@@ -8,8 +8,7 @@ files = [
     "godot_switch.cpp",
     "os_switch.cpp",
     "joypad_switch.cpp",
-    "context_gl_switch_egl.cpp",
-    "display_server_switch.cpp"
+    "context_gl_switch_egl.cpp"
 ]
 
 prog = env.add_program("#bin/godot", files)
