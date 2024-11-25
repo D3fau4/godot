@@ -46,11 +46,11 @@ public:
  Point2i window_get_position_with_decorations(WindowID p_window) const override;
  void window_set_position(const Point2i &p_position, WindowID p_window) override;
  void window_set_transient(WindowID p_window, WindowID p_parent) override;
- void window_set_max_size(const Size2i p_size, WindowID p_window) override;
+ void window_set_max_size(Size2i p_size, WindowID p_window) override;
  Size2i window_get_max_size(WindowID p_window) const override;
- void window_set_min_size(const Size2i p_size, WindowID p_window) override;
+ void window_set_min_size(Size2i p_size, WindowID p_window) override;
  Size2i window_get_min_size(WindowID p_window) const override;
- void window_set_size(const Size2i p_size, WindowID p_window) override;
+ void window_set_size(Size2i p_size, WindowID p_window) override;
  Size2i window_get_size(WindowID p_window) const override;
  Size2i window_get_size_with_decorations(WindowID p_window) const override;
  void window_set_mode(WindowMode p_mode, WindowID p_window) override;
