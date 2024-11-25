@@ -36,12 +36,13 @@
 #include "drivers/unix/os_unix.h"
 #include "drivers/unix/thread_posix.h"
 #include "drivers/gles3/rasterizer_gles3.h"
+#include "main/main.h"
 
 #include <cstdint>
 #include <random>
 
 OS_SWITCH::OS_SWITCH() {
-    return;
+    DisplayServerSwitch::register_switch_driver();
 }
 
 void OS_SWITCH::initialize_core() {
@@ -56,7 +57,6 @@ void OS_SWITCH::initialize_core() {
 	DirAccess::make_default<DirAccessUnix>(DirAccess::ACCESS_FILESYSTEM);
 
 #ifndef NO_NETWORK
-
 	NetSocketPosix::make_default();
 	IPUnix::make_default();
 #endif
@@ -64,6 +64,9 @@ void OS_SWITCH::initialize_core() {
 }
 
 void OS_SWITCH::run() {
+	if (!main_loop)
+		return;
+
 	main_loop->initialize();
 
 	swkbdInlineLaunchForLibraryApplet(&inline_keyboard, SwkbdInlineMode_AppletDisplay, 0);
@@ -85,8 +88,8 @@ void OS_SWITCH::run() {
 
 		swkbdInlineUpdate(&inline_keyboard, NULL);
 
-		/*if (Main::iteration())
-			break;*/
+		if (Main::iteration())
+			break;
 	}
 
 	swkbdInlineClose(&inline_keyboard);
@@ -125,7 +128,9 @@ void OS_SWITCH::finalize() {
 }
 
 void OS_SWITCH::finalize_core() {
+#ifndef NO_NETWORK
 	NetSocketPosix::cleanup();
+#endif
 }
 
 bool OS_SWITCH::_check_internal_feature_support(const String &p_feature) {

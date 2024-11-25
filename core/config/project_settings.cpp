@@ -557,9 +557,7 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 
 #ifdef HORIZON_ENABLED
 		if (!found) {
-			if (_load_resource_pack("romfs:/game.pck")) {
-				found = true;
-			}
+			found = _load_resource_pack("romfs:/game.pck");
 		}
 #endif
 

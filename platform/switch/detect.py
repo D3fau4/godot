@@ -246,6 +246,6 @@ def configure(env):
     env.Append(CPPPATH=["#platform/switch"])
     env.Append(CPPDEFINES=["GLES3_ENABLED", "HORIZON_ENABLED", "LIBC_FILEIO_ENABLED",  "NO_NETWORK"])
     env.Append(CPPFLAGS=["-DPTHREAD_NO_RENAME"])
-    env.Append(LIBS=["EGL", "glapi", "drm_nouveau", "nx"])
+    env.Append(LIBS=["EGL", "GLESv2", "glapi", "drm_nouveau", "nx"])
 
     # -lglad -lEGL -lglapi -ldrm_nouveau
