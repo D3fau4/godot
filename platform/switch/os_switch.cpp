@@ -35,12 +35,19 @@
 #include "drivers/unix/net_socket_posix.h"
 #include "drivers/unix/os_unix.h"
 #include "drivers/unix/thread_posix.h"
+#include "drivers/gles3/rasterizer_gles3.h"
 
 #include <cstdint>
 #include <random>
 
 OS_SWITCH::OS_SWITCH() {
     return;
+}
+
+void OS_SWITCH::swap_buffers() {
+#if defined(OPENGL_ENABLED)
+	gl_context->swap_buffers();
+#endif
 }
 
 void OS_SWITCH::initialize_core() {

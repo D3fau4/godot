@@ -238,7 +238,7 @@ def configure(env):
     #    env.ParseConfig('aarch64-none-elf-pkg-config zlib --cflags --libs')
 
     env.Append(CPPPATH=["#platform/switch"])
-    env.Append(CPPDEFINES=["SWITCH_ENABLED", "UNIX_ENABLED"])
+    env.Append(CPPDEFINES=["SWITCH_ENABLED", "UNIX_ENABLED", "GLES3_ENABLED"])
     env.Append(
         CPPFLAGS=[
             "-DHORIZON_ENABLED",
