@@ -1,17 +1,18 @@
+#include "context_gl_switch_egl.h"
 #include "core/input/input.h"
 #include "core/os/os.h"
 #include "joypad_switch.h"
+#include "servers/rendering/renderer_compositor.h"
 #include "servers/rendering_server.h"
 #include "switch_wrapper.h"
-#include "context_gl_switch_egl.h"
-#include "servers/rendering/renderer_compositor.h"
+
+#include <display_server_switch.h>
 
 class OS_SWITCH : public OS {
 	JoypadSwitch *joypad;
 	MainLoop *main_loop;
 	SwkbdInline inline_keyboard;
-	ContextGLSwitchEGL *gl_context;
-	RenderingServer *rendering_server = nullptr;
+	DisplayServerSwitch *rendering_server = nullptr;
 
 	protected:
 		virtual void initialize_core();
@@ -47,5 +48,4 @@ class OS_SWITCH : public OS {
 		void run();
 
 		OS_SWITCH();
-		virtual void swap_buffers();
 };

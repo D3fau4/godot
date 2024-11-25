@@ -28,7 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#if defined(UNIX_ENABLED)
+#if defined(UNIX_ENABLED) || defined(HORIZON_ENABLED)
 
 #include "thread_posix.h"
 

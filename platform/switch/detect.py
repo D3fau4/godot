@@ -66,6 +66,12 @@ def get_flags():
         ("builtin_squish", True),  # Not in portlibs.
         ("builtin_zlib", False),
         ("builtin_zstd", False),
+        #new
+        ('use_volk', False),
+        ("module_mobile_vr_enabled", False),
+        ('builtin_pcre2_with_jit', False),
+        ('builtin_embree', False),
+        ('module_upnp_enabled', False),
     ]
 
 
@@ -238,17 +244,8 @@ def configure(env):
     #    env.ParseConfig('aarch64-none-elf-pkg-config zlib --cflags --libs')
 
     env.Append(CPPPATH=["#platform/switch"])
-    env.Append(CPPDEFINES=["SWITCH_ENABLED", "UNIX_ENABLED", "GLES3_ENABLED"])
-    env.Append(
-        CPPFLAGS=[
-            "-DHORIZON_ENABLED",
-            "-DLIBC_FILEIO_ENABLED",
-            "-DOPENGL_ENABLED",
-            "-DGLES_ENABLED",
-            "-DPTHREAD_ENABLED",
-        ]
-    )
+    env.Append(CPPDEFINES=["GLES3_ENABLED", "HORIZON_ENABLED", "LIBC_FILEIO_ENABLED",  "NO_NETWORK"])
     env.Append(CPPFLAGS=["-DPTHREAD_NO_RENAME"])
-    env.Append(LIBS=["EGL", "GLESv2", "glapi", "drm_nouveau", "nx"])
+    env.Append(LIBS=["EGL", "glapi", "drm_nouveau", "nx"])
 
     # -lglad -lEGL -lglapi -ldrm_nouveau

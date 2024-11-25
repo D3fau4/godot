@@ -44,15 +44,10 @@ OS_SWITCH::OS_SWITCH() {
     return;
 }
 
-void OS_SWITCH::swap_buffers() {
-#if defined(OPENGL_ENABLED)
-	gl_context->swap_buffers();
-#endif
-}
-
 void OS_SWITCH::initialize_core() {
+#if !defined(NO_THREADS)
 	init_thread_posix();
-
+#endif
 	FileAccess::make_default<FileAccessUnix>(FileAccess::ACCESS_RESOURCES);
 	FileAccess::make_default<FileAccessUnix>(FileAccess::ACCESS_USERDATA);
 	FileAccess::make_default<FileAccessUnix>(FileAccess::ACCESS_FILESYSTEM);
@@ -60,8 +55,12 @@ void OS_SWITCH::initialize_core() {
 	DirAccess::make_default<DirAccessUnix>(DirAccess::ACCESS_USERDATA);
 	DirAccess::make_default<DirAccessUnix>(DirAccess::ACCESS_FILESYSTEM);
 
+#ifndef NO_NETWORK
+
 	NetSocketPosix::make_default();
 	IPUnix::make_default();
+#endif
+
 }
 
 void OS_SWITCH::run() {
@@ -130,15 +129,7 @@ void OS_SWITCH::finalize_core() {
 }
 
 bool OS_SWITCH::_check_internal_feature_support(const String &p_feature) {
-	if (p_feature == "mobile") {
-		return true;
-	}
-#if defined(__aarch64__)
-	if (p_feature == "arm64-v8a" || p_feature == "arm64") {
-		return true;
-	}
-#endif
-	return false;
+	return p_feature == "mobile";
 }
 Vector<String> OS_SWITCH::get_video_adapter_driver_info() const {
 	return Vector<String>();
@@ -169,29 +160,14 @@ Error OS_SWITCH::get_entropy(uint8_t *r_buffer, int p_bytes) {
 }
 
 Error OS_SWITCH::execute(const String &p_path, const List<String> &p_arguments, String *r_pipe, int *r_exitcode, bool read_stderr, Mutex *p_pipe_mutex, bool p_open_console) {
-
-	Vector<String> rebuilt_arguments;
-	rebuilt_arguments.push_back(p_path); // !!!! v important
-	// This is a super dumb implementation to make the editor vaguely work.
-	// It won't work if you don't exit afterwards.
-	for (const List<String>::Element *E = p_arguments.front(); E; E = E->next()) {
-		if ((*E)->find(" ") >= 0) {
-			rebuilt_arguments.push_back(String("\"") + E->get() + String("\""));
-		} else {
-			rebuilt_arguments.push_back(E->get());
-		}
-	}
-
-	envSetNextLoad(p_path.utf8().ptr(), String(" ").join(rebuilt_arguments).utf8().ptr());
-
-	return OK;
+	return ERR_UNAVAILABLE;
 }
 Error OS_SWITCH::create_process(const String &p_path, const List<String> &p_arguments, OS::ProcessID *r_child_id, bool p_open_console) {
 	return ERR_UNAVAILABLE;
 }
 
 Error OS_SWITCH::kill(const OS::ProcessID &p_pid) {
-	return FAILED;
+	return ERR_UNAVAILABLE;
 }
 
 bool OS_SWITCH::is_process_running(const OS::ProcessID &p_pid) const {

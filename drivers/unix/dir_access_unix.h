@@ -31,7 +31,7 @@
 #ifndef DIR_ACCESS_UNIX_H
 #define DIR_ACCESS_UNIX_H
 
-#if defined(UNIX_ENABLED)
+#if defined(UNIX_ENABLED) || defined(LIBC_FILEIO_ENABLED)
 
 #include "core/io/dir_access.h"
 
