@@ -1,4 +1,5 @@
 #include "joypad_switch.h"
+#include "core/os/os.h"
 
 static u64 pad_ids[JOYPADS_MAX] = {
 	(1ull << HidNpadIdType_No1) | (1ull << HidNpadIdType_Handheld),
@@ -43,10 +44,10 @@ void JoypadSwitch::process_joypads() {
 		HidAnalogStickState r_stick = padGetStickPos(&pads[index], 1);
 
 		// Axes
-		input->joy_axis(index, 0, (float)(l_stick.x / 32767.0f));
-		input->joy_axis(index, 1, (float)(-l_stick.y / 32767.0f));
-		input->joy_axis(index, 2, (float)(r_stick.x / 32767.0f));
-		input->joy_axis(index, 3, (float)(-r_stick.y / 32767.0f));
+		input->joy_axis(index, JoyAxis::LEFT_X, (float)(l_stick.x / 32767.0f));
+		input->joy_axis(index, JoyAxis::LEFT_Y, (float)(-l_stick.y / 32767.0f));
+		input->joy_axis(index, JoyAxis::RIGHT_X, (float)(r_stick.x / 32767.0f));
+		input->joy_axis(index, JoyAxis::RIGHT_Y, (float)(-r_stick.y / 32767.0f));
 
 		// Buttons
 		u64 buttons_up = padGetButtonsUp(&pads[index]);
@@ -55,10 +56,10 @@ void JoypadSwitch::process_joypads() {
 		if (buttons_up != 0 || buttons_down != 0) {
 			for (int i = 0; i < button_count; i++) {
 				if (buttons_up & pad_mapping[i]) {
-					input->joy_button(index, i, false);
+					input->joy_button(index, (JoyButton)i, false);
 				}
 				if (buttons_down & pad_mapping[i]) {
-					input->joy_button(index, i, true);
+					input->joy_button(index, (JoyButton)i, true);
 				}
 			}
 		}
