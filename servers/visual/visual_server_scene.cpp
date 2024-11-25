@@ -765,14 +765,6 @@ void VisualServerScene::instance_set_pivot_data(RID p_instance, float p_sorting_
 	instance->use_aabb_center = p_use_aabb_center;
 }
 
-void VisualServerScene::instance_set_pivot_data(RID p_instance, float p_sorting_offset, bool p_use_aabb_center) {
-	Instance *instance = instance_owner.get(p_instance);
-	ERR_FAIL_COND(!instance);
-
-	instance->sorting_offset = p_sorting_offset;
-	instance->use_aabb_center = p_use_aabb_center;
-}
-
 void VisualServerScene::instance_reset_physics_interpolation(RID p_instance) {
 	Instance *instance = instance_owner.get(p_instance);
 	ERR_FAIL_COND(!instance);
