@@ -58,6 +58,33 @@ void OS_SWITCH::initialize_core() {
 }
 
 void OS_SWITCH::run() {
+	main_loop->initialize();
+
+	swkbdInlineLaunchForLibraryApplet(&inline_keyboard, SwkbdInlineMode_AppletDisplay, 0);
+	/*swkbdInlineSetChangedStringCallback(&inline_keyboard, keyboard_string_changed_callback);
+	swkbdInlineSetMovedCursorCallback(&inline_keyboard, keyboard_moved_cursor_callback);
+	swkbdInlineSetDecidedEnterCallback(&inline_keyboard, keyboard_decided_enter_callback);
+	swkbdInlineSetDecidedCancelCallback(&inline_keyboard, keyboard_decided_cancel_callback);*/
+
+	int last_touch_count = 0;
+	// maximum of 16 touches
+	Vector2 last_touch_pos[16];
+	HidTouchScreenState touch_state = { 0 };
+
+	hidInitializeTouchScreen();
+
+	while (appletMainLoop()) {
+
+		joypad->process_joypads();
+
+		swkbdInlineUpdate(&inline_keyboard, NULL);
+
+		/*if (Main::iteration())
+			break;*/
+	}
+
+	swkbdInlineClose(&inline_keyboard);
+	main_loop->finalize();
 }
 
 String OS_SWITCH::get_executable_path() const {

@@ -2,10 +2,12 @@
 #include "core/os/os.h"
 #include "joypad_switch.h"
 #include "servers/rendering_server.h"
+#include "switch_wrapper.h"
 
 class OS_SWITCH : public OS {
 	JoypadSwitch *joypad;
 	MainLoop *main_loop;
+	SwkbdInline inline_keyboard;
 
 	protected:
 		virtual void initialize_core();
