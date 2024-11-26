@@ -5,15 +5,26 @@ const size_t gfxMemSize = 8 * 1024 * 1024;
 
 DisplayServerSwitch::DisplayServerSwitch(const String &p_rendering_driver, WindowMode p_mode, VSyncMode p_vsync_mode, uint32_t p_flags, const Vector2i *p_position, const Vector2i &p_resolution, int p_screen, Error &r_error) {
     rendering_driver = p_rendering_driver;
+    
+    if (rendering_driver != "opengl3") {
+        print_line("Invalid rendering driver: " + rendering_driver);
+        r_error = ERR_UNAVAILABLE;
+        return;
+    }
+    
     gl_context = memnew(ContextGLSwitchEGL(false));
 
     if (gl_context->initialize() != OK) {
+        print_line("Failed to initialize EGL context");
+        memdelete(gl_context);
         gl_context = nullptr;
     }
 
     RasterizerGLES3::make_current();
     gl_context->set_use_vsync(p_vsync_mode == VSYNC_ENABLED);
     resolution = Size2i(p_resolution.width, p_resolution.height);
+
+    r_error = OK;
 }
 
 DisplayServer *DisplayServerSwitch::create_func(const String &p_rendering_driver, WindowMode p_mode, VSyncMode p_vsync_mode, uint32_t p_flags, const Vector2i *p_position, const Vector2i &p_resolution, int p_screen, Error &r_error) {
@@ -21,7 +32,7 @@ DisplayServer *DisplayServerSwitch::create_func(const String &p_rendering_driver
 }
 
 Vector<String> DisplayServerSwitch::get_rendering_drivers_func() {
-    return Vector<String>{"GLES3"};
+    return Vector<String>{"opengl3"};
 }
 
 void DisplayServerSwitch::register_switch_driver() {
@@ -221,4 +232,8 @@ void DisplayServerSwitch::_dispatch_input_event(const Ref<InputEvent> &p_event) 
 
 DisplayServer::VSyncMode DisplayServerSwitch::window_get_vsync_mode(WindowID p_vsync_mode) const {
     return DisplayServer::VSYNC_ENABLED;
+}
+
+void DisplayServerSwitch::swap_buffers() {
+    gl_context->swap_buffers();
 }
