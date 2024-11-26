@@ -22,7 +22,7 @@ DisplayServerSwitch::DisplayServerSwitch(const String &p_rendering_driver, Windo
 
     RasterizerGLES3::make_current();
     gl_context->set_use_vsync(p_vsync_mode == VSYNC_ENABLED);
-    resolution = Size2i(p_resolution.width, p_resolution.height);
+    resolution = Size2i(gl_context->get_window_width(), gl_context->get_window_height());
 
     r_error = OK;
 }
