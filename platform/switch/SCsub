@@ -11,6 +11,7 @@ files = [
     "context_gl_switch_egl.cpp",
     "display_server_switch.cpp",
     "switch_audio.cpp",
+    "switch_test_scene.cpp",
     "rendering/switch/rd_deko3d.cpp",
 ]
 
