@@ -5,6 +5,7 @@
 #include "servers/rendering/renderer_compositor.h"
 #include "servers/rendering_server.h"
 #include "switch_wrapper.h"
+#include "switch_audio.h"
 
 #include <display_server_switch.h>
 
@@ -13,6 +14,10 @@ class OS_SWITCH : public OS {
 	MainLoop *main_loop;
 	SwkbdInline inline_keyboard;
 	DisplayServerSwitch *rendering_server = nullptr;
+	
+#ifdef __SWITCH__
+	AudioDriverSDL2 driver_sdl2;
+#endif
 
 	protected:
 		virtual void initialize_core();

@@ -1,10 +1,29 @@
 #include "display_server_switch.h"
 #include <drivers/gles3/rasterizer_gles3.h>
+#include "rendering/switch/rd_deko3d.h"
+#include <SDL2/SDL.h>
 
 const size_t gfxMemSize = 8 * 1024 * 1024;
 
 DisplayServerSwitch::DisplayServerSwitch(const String &p_rendering_driver, WindowMode p_mode, VSyncMode p_vsync_mode, uint32_t p_flags, const Vector2i *p_position, const Vector2i &p_resolution, int p_screen, Error &r_error) {
     rendering_driver = p_rendering_driver;
+    
+    // Create SDL2 window for Switch
+    sdl_window = SDL_CreateWindow(
+        "Godot Engine",
+        SDL_WINDOWPOS_UNDEFINED,
+        SDL_WINDOWPOS_UNDEFINED,
+        1280, 720,
+        SDL_WINDOW_FULLSCREEN
+    );
+    
+    if (!sdl_window) {
+        ERR_PRINT(vformat("Failed to create SDL window: %s", SDL_GetError()));
+        r_error = ERR_CANT_CREATE;
+        return;
+    }
+    
+    print_line("SDL2: Window created - 1280x720 fullscreen");
     
     if (rendering_driver != "opengl3") {
         print_line("Invalid rendering driver: " + rendering_driver);
@@ -22,7 +41,7 @@ DisplayServerSwitch::DisplayServerSwitch(const String &p_rendering_driver, Windo
 
     RasterizerGLES3::make_current();
     gl_context->set_use_vsync(p_vsync_mode == VSYNC_ENABLED);
-    resolution = Size2i(gl_context->get_window_width(), gl_context->get_window_height());
+    resolution = Size2i(1280, 720);
 
     r_error = OK;
 }
@@ -216,7 +235,41 @@ bool DisplayServerSwitch::can_any_window_draw() const {
 }
 
 void DisplayServerSwitch::process_events() {
-    // no implementation needed
+    // Process SDL2 events
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+        switch (event.type) {
+            case SDL_QUIT:
+                // Handle quit event
+                if (!window_event_callback.is_null()) {
+                    Variant ev = int(DisplayServer::WINDOW_EVENT_CLOSE_REQUEST);
+                    Variant *evp = &ev;
+                    Variant ret;
+                    Callable::CallError ce;
+                    window_event_callback.callp((const Variant **)&evp, 1, ret, ce);
+                }
+                break;
+            case SDL_WINDOWEVENT:
+                if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+                    if (!window_event_callback.is_null()) {
+                        Variant ev = int(DisplayServer::WINDOW_EVENT_FOCUS_IN);
+                        Variant *evp = &ev;
+                        Variant ret;
+                        Callable::CallError ce;
+                        window_event_callback.callp((const Variant **)&evp, 1, ret, ce);
+                    }
+                } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+                    if (!window_event_callback.is_null()) {
+                        Variant ev = int(DisplayServer::WINDOW_EVENT_FOCUS_OUT);
+                        Variant *evp = &ev;
+                        Variant ret;
+                        Callable::CallError ce;
+                        window_event_callback.callp((const Variant **)&evp, 1, ret, ce);
+                    }
+                }
+                break;
+        }
+    }
 }
 
 void DisplayServerSwitch::_dispatch_input_event(const Ref<InputEvent> &p_event) {

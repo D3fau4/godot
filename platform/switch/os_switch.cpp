@@ -37,9 +37,11 @@
 #include "drivers/unix/thread_posix.h"
 #include "drivers/gles3/rasterizer_gles3.h"
 #include "main/main.h"
+#include "switch_audio.h"
 
 #include <cstdint>
 #include <random>
+#include <SDL2/SDL.h>
 
 OS_SWITCH::OS_SWITCH() {
     DisplayServerSwitch::register_switch_driver();
@@ -102,6 +104,16 @@ String OS_SWITCH::get_executable_path() const {
 
 void OS_SWITCH::initialize() {
 	OS_SWITCH::initialize_core();
+	
+	// Initialize SDL2 for video, audio, and input
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) < 0) {
+		ERR_PRINT(vformat("Failed to initialize SDL2: %s", SDL_GetError()));
+	} else {
+		print_line("SDL2: Initialized successfully");
+	}
+	
+	// Register SDL2 audio driver
+	AudioDriverManager::add_driver(&driver_sdl2);
 }
 
 void OS_SWITCH::initialize_joypads() {
@@ -125,6 +137,10 @@ void OS_SWITCH::finalize() {
 	if (this->joypad){
 		memdelete(this->joypad);
 	}
+	
+	// Cleanup SDL2
+	SDL_Quit();
+	print_line("SDL2: Finalized");
 }
 
 void OS_SWITCH::finalize_core() {

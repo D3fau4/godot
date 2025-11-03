@@ -10,6 +10,8 @@ public:
  ContextGLSwitchEGL *gl_context;
  String rendering_driver;
  Size2i resolution;
+ 
+ struct SDL_Window *sdl_window = nullptr;
 
  ObjectID window_attached_instance_id;
  Callable window_event_callback;

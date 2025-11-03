@@ -24,19 +24,115 @@ static const HidNpadButton pad_mapping[] = {
 JoypadSwitch::JoypadSwitch(Input *in) {
 	this->input = in;
 
-	// TODO: n players?
-	padConfigureInput(1, HidNpadStyleSet_NpadStandard);
-
-	this->button_count = sizeof(pad_mapping) / sizeof(*pad_mapping);
+	// Initialize SDL2 controllers
 	for (int i = 0; i < JOYPADS_MAX; i++) {
-		padInitializeWithMask(&pads[i], pad_ids[i]);
+		controllers[i] = nullptr;
+	}
+	
+	if (use_sdl) {
+		// Open SDL2 game controllers
+		int num_joysticks = SDL_NumJoysticks();
+		print_line(vformat("SDL2: Found %d joysticks", num_joysticks));
+		
+		for (int i = 0; i < num_joysticks && i < JOYPADS_MAX; i++) {
+			if (SDL_IsGameController(i)) {
+				controllers[i] = SDL_GameControllerOpen(i);
+				if (controllers[i]) {
+					const char *name = SDL_GameControllerName(controllers[i]);
+					print_line(vformat("SDL2: Opened controller %d: %s", i, name ? name : "Unknown"));
+					input->joy_connection_changed(i, true, String(name ? name : "Joy-Con"), "");
+				}
+			}
+		}
+	} else {
+		// Fallback to libnx
+		padConfigureInput(1, HidNpadStyleSet_NpadStandard);
+		this->button_count = sizeof(pad_mapping) / sizeof(*pad_mapping);
+		for (int i = 0; i < JOYPADS_MAX; i++) {
+			padInitializeWithMask(&pads[i], pad_ids[i]);
+		}
 	}
 }
 
 JoypadSwitch::~JoypadSwitch() {
+	// Close SDL2 controllers
+	for (int i = 0; i < JOYPADS_MAX; i++) {
+		if (controllers[i]) {
+			SDL_GameControllerClose(controllers[i]);
+			controllers[i] = nullptr;
+		}
+	}
 }
 
 void JoypadSwitch::process_joypads() {
+	if (use_sdl) {
+		process_sdl_controllers();
+	} else {
+		process_libnx_pads();
+	}
+}
+
+void JoypadSwitch::process_sdl_controllers() {
+	for (int i = 0; i < JOYPADS_MAX; i++) {
+		if (!controllers[i]) {
+			continue;
+		}
+		
+		// Check if controller is still connected
+		if (!SDL_GameControllerGetAttached(controllers[i])) {
+			input->joy_connection_changed(i, false, "", "");
+			SDL_GameControllerClose(controllers[i]);
+			controllers[i] = nullptr;
+			continue;
+		}
+		
+		// Process analog sticks
+		float left_x = SDL_GameControllerGetAxis(controllers[i], SDL_CONTROLLER_AXIS_LEFTX) / 32767.0f;
+		float left_y = SDL_GameControllerGetAxis(controllers[i], SDL_CONTROLLER_AXIS_LEFTY) / 32767.0f;
+		float right_x = SDL_GameControllerGetAxis(controllers[i], SDL_CONTROLLER_AXIS_RIGHTX) / 32767.0f;
+		float right_y = SDL_GameControllerGetAxis(controllers[i], SDL_CONTROLLER_AXIS_RIGHTY) / 32767.0f;
+		
+		input->joy_axis(i, JoyAxis::LEFT_X, left_x);
+		input->joy_axis(i, JoyAxis::LEFT_Y, left_y);
+		input->joy_axis(i, JoyAxis::RIGHT_X, right_x);
+		input->joy_axis(i, JoyAxis::RIGHT_Y, right_y);
+		
+		// Process triggers
+		float trigger_l = SDL_GameControllerGetAxis(controllers[i], SDL_CONTROLLER_AXIS_TRIGGERLEFT) / 32767.0f;
+		float trigger_r = SDL_GameControllerGetAxis(controllers[i], SDL_CONTROLLER_AXIS_TRIGGERRIGHT) / 32767.0f;
+		input->joy_axis(i, JoyAxis::TRIGGER_LEFT, trigger_l);
+		input->joy_axis(i, JoyAxis::TRIGGER_RIGHT, trigger_r);
+		
+		// Process buttons (mapping to Godot's JoyButton enum)
+		static const struct {
+			SDL_GameControllerButton sdl_button;
+			JoyButton godot_button;
+		} button_map[] = {
+			{ SDL_CONTROLLER_BUTTON_A, JoyButton::A },
+			{ SDL_CONTROLLER_BUTTON_B, JoyButton::B },
+			{ SDL_CONTROLLER_BUTTON_X, JoyButton::X },
+			{ SDL_CONTROLLER_BUTTON_Y, JoyButton::Y },
+			{ SDL_CONTROLLER_BUTTON_BACK, JoyButton::BACK },
+			{ SDL_CONTROLLER_BUTTON_GUIDE, JoyButton::GUIDE },
+			{ SDL_CONTROLLER_BUTTON_START, JoyButton::START },
+			{ SDL_CONTROLLER_BUTTON_LEFTSTICK, JoyButton::LEFT_STICK },
+			{ SDL_CONTROLLER_BUTTON_RIGHTSTICK, JoyButton::RIGHT_STICK },
+			{ SDL_CONTROLLER_BUTTON_LEFTSHOULDER, JoyButton::LEFT_SHOULDER },
+			{ SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, JoyButton::RIGHT_SHOULDER },
+			{ SDL_CONTROLLER_BUTTON_DPAD_UP, JoyButton::DPAD_UP },
+			{ SDL_CONTROLLER_BUTTON_DPAD_DOWN, JoyButton::DPAD_DOWN },
+			{ SDL_CONTROLLER_BUTTON_DPAD_LEFT, JoyButton::DPAD_LEFT },
+			{ SDL_CONTROLLER_BUTTON_DPAD_RIGHT, JoyButton::DPAD_RIGHT },
+		};
+		
+		for (const auto &mapping : button_map) {
+			bool pressed = SDL_GameControllerGetButton(controllers[i], mapping.sdl_button);
+			input->joy_button(i, mapping.godot_button, pressed);
+		}
+	}
+}
+
+void JoypadSwitch::process_libnx_pads() {
 	for (int index = 0; index < JOYPADS_MAX; index++) {
 		padUpdate(&pads[index]);
 

@@ -10,6 +10,8 @@ files = [
     "joypad_switch.cpp",
     "context_gl_switch_egl.cpp",
     "display_server_switch.cpp",
+    "switch_audio.cpp",
+    "rendering/switch/rd_deko3d.cpp",
 ]
 
 prog = env.add_program("#bin/godot", files)

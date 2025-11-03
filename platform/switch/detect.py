@@ -29,6 +29,19 @@ def can_build():
     if not os.path.exists("{}/portlibs/switch/bin/aarch64-none-elf-pkg-config".format(os.environ.get("DEVKITPRO"))):
         print("aarch64-none-elf-pkg-config not found.. switch disabled.")
         return False
+    
+    # Check for SDL2 (required for input/audio/window)
+    pkg_config = "{}/portlibs/switch/bin/aarch64-none-elf-pkg-config".format(os.environ.get("DEVKITPRO"))
+    if os.system("{} sdl2 --exists".format(pkg_config)):
+        print("SDL2 not found.. switch disabled.")
+        return False
+    
+    # Check for deko3d (required for rendering)
+    deko3d_path = "{}/portlibs/switch/lib/libdeko3d.a".format(os.environ.get("DEVKITPRO"))
+    if not os.path.exists(deko3d_path):
+        print("deko3d not found at {}.. switch disabled.".format(deko3d_path))
+        return False
+    
     return True
 
 
@@ -244,8 +257,13 @@ def configure(env):
     #    env.ParseConfig('aarch64-none-elf-pkg-config zlib --cflags --libs')
 
     env.Append(CPPPATH=["#platform/switch"])
+    # Add SDL2 includes and deko3d headers
+    env.ParseConfig("aarch64-none-elf-pkg-config sdl2 --cflags --libs")
+    env.Append(CPPPATH=["{}/portlibs/switch/include/deko3d".format(dkp)])
+    
     env.Append(CPPDEFINES=["GLES3_ENABLED", "HORIZON_ENABLED", "LIBC_FILEIO_ENABLED",  "NO_NETWORK"])
     env.Append(CPPFLAGS=["-DPTHREAD_NO_RENAME"])
-    env.Append(LIBS=["EGL", "GLESv2", "glapi", "drm_nouveau", "nx"])
+    # Link SDL2 and deko3d instead of EGL/GLES
+    env.Append(LIBS=["deko3d", "SDL2", "EGL", "GLESv2", "glapi", "drm_nouveau", "nx"])
 
     # -lglad -lEGL -lglapi -ldrm_nouveau
