@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from SCons import Environment
 
+MSYS_DEVKITPRO = "/opt/devkitpro"
+
 
 def is_active():
     return True
@@ -23,7 +25,7 @@ def get_devkitpro_path():
     if os.path.isdir(path):
         return path
 
-    if os.name == "nt" and path.lower() == "/opt/devkitpro":
+    if os.name == "nt" and path.lower() == MSYS_DEVKITPRO:
         for candidate in ["C:/devkitPro", "C:/devkitpro"]:
             if os.path.isdir(candidate):
                 return candidate
@@ -40,6 +42,10 @@ def can_build():
 
     if not os.path.isdir(os.path.join(path, "devkitA64")):
         print("devkitA64 not found in %s. NX disabled." % path)
+        return False
+
+    if not os.path.isfile(os.path.join(path, "portlibs", "switch", "lib", "libz.a")):
+        print("switch-portlibs not found in %s. NX disabled." % path)
         return False
 
     return True
@@ -61,6 +67,19 @@ def get_flags():
         ("vulkan", False),
         ("opengl3", True),
         ("use_volk", False),
+        ("builtin_enet", False),
+        ("builtin_freetype", False),
+        ("builtin_libogg", False),
+        ("builtin_libpng", False),
+        ("builtin_libtheora", False),
+        ("builtin_libvorbis", False),
+        ("builtin_libwebp", False),
+        ("builtin_mbedtls", False),
+        ("builtin_miniupnpc", False),
+        ("builtin_pcre2", False),
+        ("builtin_wslay", False),
+        ("builtin_zlib", False),
+        ("builtin_zstd", False),
         ("builtin_pcre2_with_jit", False),
         ("module_denoise_enabled", False),
         ("module_lightmapper_rd_enabled", False),
@@ -89,6 +108,7 @@ def configure(env: "Environment"):
     env.PrependENVPath("PATH", devkitpro + "/tools/bin")
     env.PrependENVPath("PATH", portlibs + "/bin")
     env.PrependENVPath("PATH", devkita64 + "/bin")
+    os.environ["PATH"] = env["ENV"]["PATH"]
 
     prefix = devkita64 + "/bin/aarch64-none-elf-"
     env["CC"] = prefix + "gcc"
@@ -133,5 +153,55 @@ def configure(env: "Environment"):
     if env["opengl3"]:
         env.Append(CPPDEFINES=["GLES3_ENABLED", "EGL_ENABLED"])
         env.Append(LIBS=["EGL", "GLESv2", "glapi", "drm_nouveau"])
+
+    if env["builtin_freetype"] or env["builtin_libpng"] or env["builtin_zlib"]:
+        env["builtin_freetype"] = True
+        env["builtin_libpng"] = True
+        env["builtin_zlib"] = True
+
+    if not env["builtin_freetype"]:
+        env.Append(CCFLAGS=["-isystem", portlibs + "/include/freetype2"])
+        env.Append(LIBS=["freetype", "bz2", "harfbuzz"])
+
+    if not env["builtin_libpng"]:
+        env.Append(CCFLAGS=["-isystem", portlibs + "/include/libpng16"])
+        env.Append(LIBS=["png16"])
+
+    if not env["builtin_libtheora"]:
+        env["builtin_libogg"] = False
+        env["builtin_libvorbis"] = False
+        env.Append(LIBS=["theora", "theoradec"])
+
+    if not env["builtin_libvorbis"]:
+        env["builtin_libogg"] = False
+        env.Append(LIBS=["vorbisfile", "vorbis"])
+
+    if not env["builtin_libogg"]:
+        env.Append(LIBS=["ogg"])
+
+    if not env["builtin_libwebp"]:
+        env.Append(LIBS=["webp"])
+
+    if not env["builtin_enet"]:
+        env.Append(LIBS=["enet"])
+
+    if not env["builtin_mbedtls"]:
+        env.Append(LIBS=["mbedtls", "mbedx509", "mbedcrypto"])
+
+    if not env["builtin_wslay"]:
+        env.Append(LIBS=["wslay"])
+
+    if not env["builtin_miniupnpc"]:
+        env.Append(CCFLAGS=["-isystem", portlibs + "/include/miniupnpc"])
+        env.Append(LIBS=["miniupnpc"])
+
+    if not env["builtin_pcre2"]:
+        env.Append(LIBS=["pcre2-32"])
+
+    if not env["builtin_zstd"]:
+        env.Append(LIBS=["zstd"])
+
+    if not env["builtin_zlib"]:
+        env.Append(LIBS=["z"])
 
     env.Append(LIBS=["nx", "m"])

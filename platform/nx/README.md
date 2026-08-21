@@ -5,13 +5,18 @@ built with the devkitPro / devkitA64 toolchain and libnx.
 
 ## Requirements
 
-Install devkitPro with the `switch-dev` group, plus Mesa for the OpenGL ES driver:
+Install devkitPro with the `switch-dev` and `switch-portlibs` groups:
 
 ```
-dkp-pacman -S switch-dev switch-mesa switch-libdrm_nouveau
+dkp-pacman -S switch-dev switch-portlibs
 ```
 
 `DEVKITPRO` must be set in the environment (for example `/opt/devkitpro`).
+
+The build links against the portlibs copies of zlib, libpng, freetype, ogg,
+vorbis, theora, webp, mbedtls, wslay, miniupnpc, enet, zstd and pcre2, so
+`aarch64-none-elf-pkg-config` must be available. Mesa (`switch-mesa`) provides
+the EGL/GLES3 driver and is part of the same group.
 
 ## Building
 
