@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  thread_posix.cpp                                                      */
+/*  audio_driver_nx.h                                                     */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,49 +28,59 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#if defined(UNIX_ENABLED) || defined(NX_ENABLED)
+#ifndef AUDIO_DRIVER_NX_H
+#define AUDIO_DRIVER_NX_H
 
-#include "thread_posix.h"
-
+#include "core/os/mutex.h"
 #include "core/os/thread.h"
-#include "core/string/ustring.h"
+#include "core/templates/safe_refcount.h"
+#include "servers/audio_server.h"
+#include "switch_wrapper.h"
 
-#ifdef PTHREAD_BSD_SET_NAME
-#include <pthread_np.h>
-#endif
+class AudioDriverNX : public AudioDriver {
+	enum {
+		AUDREN_BUFFER_COUNT = 2,
+	};
 
-static Error set_name(const String &p_name) {
-#ifdef PTHREAD_NO_RENAME
-	return ERR_UNAVAILABLE;
+	Thread thread;
+	Mutex mutex;
 
-#else
+	LibnxAudioDriver audren_driver;
+	AudioDriverWaveBuf audren_buffers[AUDREN_BUFFER_COUNT];
+	void *audren_pool_ptr = nullptr;
+	size_t audren_pool_size = 0;
+	unsigned int audren_buffer_size = 0;
 
-#ifdef PTHREAD_RENAME_SELF
+	Vector<int32_t> samples_in;
+	Vector<int16_t> samples_out;
 
-	// check if thread is the same as caller
-	int err = pthread_setname_np(p_name.utf8().get_data());
+	unsigned int buffer_frames = 0;
+	unsigned int mix_rate = 0;
+	int channels = 2;
+	SpeakerMode speaker_mode = SPEAKER_MODE_STEREO;
 
-#else
+	bool active = false;
+	bool audren_started = false;
+	SafeFlag exit_thread;
 
-	pthread_t running_thread = pthread_self();
-#ifdef PTHREAD_BSD_SET_NAME
-	pthread_set_name_np(running_thread, p_name.utf8().get_data());
-	int err = 0; // Open/FreeBSD ignore errors in this function
-#elif defined(PTHREAD_NETBSD_SET_NAME)
-	int err = pthread_setname_np(running_thread, "%s", const_cast<char *>(p_name.utf8().get_data()));
-#else
-	int err = pthread_setname_np(running_thread, p_name.utf8().get_data());
-#endif // PTHREAD_BSD_SET_NAME
+	Error init_device();
+	void finish_device();
 
-#endif // PTHREAD_RENAME_SELF
+	static void thread_func(void *p_udata);
 
-	return err == 0 ? OK : ERR_INVALID_PARAMETER;
+public:
+	virtual const char *get_name() const override { return "AUDREN"; }
 
-#endif // PTHREAD_NO_RENAME
-}
+	virtual Error init() override;
+	virtual void start() override;
+	virtual int get_mix_rate() const override;
+	virtual SpeakerMode get_speaker_mode() const override;
+	virtual void lock() override;
+	virtual void unlock() override;
+	virtual void finish() override;
 
-void init_thread_posix() {
-	Thread::_set_platform_functions({ .set_name = set_name });
-}
+	AudioDriverNX() {}
+	~AudioDriverNX() {}
+};
 
-#endif // UNIX_ENABLED || NX_ENABLED
+#endif // AUDIO_DRIVER_NX_H

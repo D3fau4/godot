@@ -30,7 +30,7 @@
 
 #include "ip_unix.h"
 
-#if defined(UNIX_ENABLED) || defined(WINDOWS_ENABLED)
+#if defined(UNIX_ENABLED) || defined(WINDOWS_ENABLED) || defined(NX_ENABLED)
 
 #include <string.h>
 
@@ -49,6 +49,8 @@
 // We could drop this file once we up our API level to 24,
 // where the NDK's ifaddrs.h supports to needed getifaddrs.
 #include "thirdparty/misc/ifaddrs-android.h"
+#elif defined(NX_ENABLED)
+// libnx has no ifaddrs implementation.
 #else
 #ifdef __FreeBSD__
 #include <sys/types.h>
@@ -57,8 +59,11 @@
 #endif
 #include <arpa/inet.h>
 #include <sys/socket.h>
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__) || defined(NX_ENABLED)
 #include <netinet/in.h>
+#endif
+#ifdef NX_ENABLED
+#include <unistd.h>
 #endif
 #include <net/if.h> // Order is important on OpenBSD, leave as last
 #endif
@@ -209,6 +214,28 @@ void IPUnix::get_local_interfaces(HashMap<String, Interface_Info> *r_interfaces)
 }
 
 #endif
+
+#elif defined(NX_ENABLED)
+
+void IPUnix::get_local_interfaces(HashMap<String, Interface_Info> *r_interfaces) const {
+	const uint32_t host_id = (uint32_t)gethostid();
+	if (host_id == 0) {
+		return;
+	}
+
+	struct sockaddr_in addr;
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = host_id;
+
+	Interface_Info info;
+	info.name = "eth0";
+	info.name_friendly = info.name;
+	info.index = "1";
+	info.ip_addresses.push_front(_sockaddr2ip((struct sockaddr *)&addr));
+
+	r_interfaces->insert(info.name, info);
+}
 
 #else // UNIX
 

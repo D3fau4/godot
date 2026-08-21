@@ -30,7 +30,7 @@
 
 #include "file_access_unix.h"
 
-#if defined(UNIX_ENABLED)
+#if defined(UNIX_ENABLED) || defined(NX_ENABLED)
 
 #include "core/os/os.h"
 #include "core/string/print_string.h"
@@ -40,7 +40,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#if defined(UNIX_ENABLED)
+#if defined(UNIX_ENABLED) || defined(NX_ENABLED)
 #include <unistd.h>
 #endif
 
@@ -261,7 +261,7 @@ bool FileAccessUnix::file_exists(const String &p_path) {
 		return false;
 	}
 
-#ifdef UNIX_ENABLED
+#if defined(UNIX_ENABLED) || defined(NX_ENABLED)
 	// See if we have access to the file
 	if (access(filename.utf8().get_data(), F_OK)) {
 		return false;
@@ -328,4 +328,4 @@ FileAccessUnix::~FileAccessUnix() {
 	_close();
 }
 
-#endif // UNIX_ENABLED
+#endif // UNIX_ENABLED || NX_ENABLED

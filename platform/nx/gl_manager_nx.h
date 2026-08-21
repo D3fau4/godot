@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  thread_posix.cpp                                                      */
+/*  gl_manager_nx.h                                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,49 +28,51 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#if defined(UNIX_ENABLED) || defined(NX_ENABLED)
+#ifndef GL_MANAGER_NX_H
+#define GL_MANAGER_NX_H
 
-#include "thread_posix.h"
+#if defined(NX_ENABLED) && defined(GLES3_ENABLED)
 
-#include "core/os/thread.h"
-#include "core/string/ustring.h"
+#include "core/error/error_list.h"
+#include "core/math/vector2i.h"
 
-#ifdef PTHREAD_BSD_SET_NAME
-#include <pthread_np.h>
-#endif
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
 
-static Error set_name(const String &p_name) {
-#ifdef PTHREAD_NO_RENAME
-	return ERR_UNAVAILABLE;
+class GLManagerNX {
+	EGLDisplay display = EGL_NO_DISPLAY;
+	EGLSurface surface = EGL_NO_SURFACE;
+	EGLContext context = EGL_NO_CONTEXT;
+	EGLConfig config = nullptr;
 
-#else
+	Vector2i window_size;
+	bool use_vsync = true;
 
-#ifdef PTHREAD_RENAME_SELF
+	Error _create_surface();
+	void _destroy_surface();
 
-	// check if thread is the same as caller
-	int err = pthread_setname_np(p_name.utf8().get_data());
+public:
+	Error initialize(const Vector2i &p_size);
+	void cleanup();
 
-#else
+	Error resize(const Vector2i &p_size);
+	Vector2i get_size() const { return window_size; }
 
-	pthread_t running_thread = pthread_self();
-#ifdef PTHREAD_BSD_SET_NAME
-	pthread_set_name_np(running_thread, p_name.utf8().get_data());
-	int err = 0; // Open/FreeBSD ignore errors in this function
-#elif defined(PTHREAD_NETBSD_SET_NAME)
-	int err = pthread_setname_np(running_thread, "%s", const_cast<char *>(p_name.utf8().get_data()));
-#else
-	int err = pthread_setname_np(running_thread, p_name.utf8().get_data());
-#endif // PTHREAD_BSD_SET_NAME
+	void release_current();
+	void make_current();
+	void swap_buffers();
 
-#endif // PTHREAD_RENAME_SELF
+	void set_use_vsync(bool p_use);
+	bool is_using_vsync() const { return use_vsync; }
 
-	return err == 0 ? OK : ERR_INVALID_PARAMETER;
+	void *get_context() const { return context; }
+	void *get_display() const { return display; }
+	void *get_config() const { return config; }
 
-#endif // PTHREAD_NO_RENAME
-}
+	GLManagerNX() {}
+	~GLManagerNX();
+};
 
-void init_thread_posix() {
-	Thread::_set_platform_functions({ .set_name = set_name });
-}
+#endif // NX_ENABLED && GLES3_ENABLED
 
-#endif // UNIX_ENABLED || NX_ENABLED
+#endif // GL_MANAGER_NX_H

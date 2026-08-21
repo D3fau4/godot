@@ -36,7 +36,7 @@
 
 #include <stdio.h>
 
-#if defined(UNIX_ENABLED)
+#if defined(UNIX_ENABLED) || defined(NX_ENABLED)
 
 typedef void (*CloseNotificationFunc)(const String &p_file, int p_flags);
 
@@ -88,6 +88,6 @@ public:
 	virtual ~FileAccessUnix();
 };
 
-#endif // UNIX_ENABLED
+#endif // UNIX_ENABLED || NX_ENABLED
 
 #endif // FILE_ACCESS_UNIX_H

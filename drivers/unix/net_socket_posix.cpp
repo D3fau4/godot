@@ -34,7 +34,7 @@
 // so this allows skipping this file to reimplement this API differently.
 #ifndef UNIX_SOCKET_UNAVAILABLE
 
-#if defined(UNIX_ENABLED)
+#if defined(UNIX_ENABLED) || defined(NX_ENABLED)
 
 #include <errno.h>
 #include <fcntl.h>
@@ -50,7 +50,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#ifdef WEB_ENABLED
+#if defined(WEB_ENABLED) || defined(NX_ENABLED)
 #include <arpa/inet.h>
 #endif
 
@@ -91,7 +91,7 @@
 #define SIO_UDP_NETRESET _WSAIOW(IOC_VENDOR, 15)
 #endif
 
-#endif // UNIX_ENABLED
+#endif // UNIX_ENABLED || NX_ENABLED
 
 size_t NetSocketPosix::_set_addr_storage(struct sockaddr_storage *p_addr, const IPAddress &p_ip, uint16_t p_port, IP::Type p_ip_type) {
 	memset(p_addr, 0, sizeof(struct sockaddr_storage));
@@ -291,11 +291,15 @@ _FORCE_INLINE_ Error NetSocketPosix::_change_multicast_group(IPAddress p_ip, Str
 		memcpy(&greq.imr_interface, if_ip.get_ipv4(), 4);
 		ret = setsockopt(_sock, level, sock_opt, (const char *)&greq, sizeof(greq));
 	} else {
+#ifdef NX_ENABLED
+		return ERR_UNAVAILABLE;
+#else
 		struct ipv6_mreq greq;
 		int sock_opt = p_add ? IPV6_ADD_MEMBERSHIP : IPV6_DROP_MEMBERSHIP;
 		memcpy(&greq.ipv6mr_multiaddr, p_ip.get_ipv6(), 16);
 		greq.ipv6mr_interface = if_v6id;
 		ret = setsockopt(_sock, level, sock_opt, (const char *)&greq, sizeof(greq));
+#endif
 	}
 	ERR_FAIL_COND_V(ret != 0, FAILED);
 

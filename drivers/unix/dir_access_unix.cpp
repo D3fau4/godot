@@ -30,7 +30,7 @@
 
 #include "dir_access_unix.h"
 
-#if defined(UNIX_ENABLED)
+#if defined(UNIX_ENABLED) || defined(NX_ENABLED)
 
 #include "core/os/memory.h"
 #include "core/os/os.h"
@@ -41,7 +41,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifndef NX_ENABLED
 #include <sys/statvfs.h>
+#endif
 
 #ifdef HAVE_MNTENT
 #include <mntent.h>
@@ -446,6 +449,9 @@ String DirAccessUnix::read_link(String p_file) {
 
 	p_file = fix_path(p_file);
 
+#ifdef NX_ENABLED
+	return p_file;
+#else
 	char buf[256];
 	memset(buf, 0, 256);
 	ssize_t len = readlink(p_file.utf8().get_data(), buf, sizeof(buf));
@@ -454,6 +460,7 @@ String DirAccessUnix::read_link(String p_file) {
 		link.parse_utf8(buf, len);
 	}
 	return link;
+#endif
 }
 
 Error DirAccessUnix::create_link(String p_source, String p_target) {
@@ -464,20 +471,28 @@ Error DirAccessUnix::create_link(String p_source, String p_target) {
 	p_source = fix_path(p_source);
 	p_target = fix_path(p_target);
 
+#ifdef NX_ENABLED
+	return ERR_UNAVAILABLE;
+#else
 	if (symlink(p_source.utf8().get_data(), p_target.utf8().get_data()) == 0) {
 		return OK;
 	} else {
 		return FAILED;
 	}
+#endif
 }
 
 uint64_t DirAccessUnix::get_space_left() {
+#ifdef NX_ENABLED
+	return 0;
+#else
 	struct statvfs vfs;
 	if (statvfs(current_dir.utf8().get_data(), &vfs) != 0) {
 		return 0;
 	}
 
 	return (uint64_t)vfs.f_bavail * (uint64_t)vfs.f_frsize;
+#endif
 }
 
 String DirAccessUnix::get_filesystem_type() const {
@@ -508,4 +523,4 @@ DirAccessUnix::~DirAccessUnix() {
 	list_dir_end();
 }
 
-#endif // UNIX_ENABLED
+#endif // UNIX_ENABLED || NX_ENABLED

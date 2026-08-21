@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  thread_posix.cpp                                                      */
+/*  godot_nx.cpp                                                          */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,49 +28,52 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#if defined(UNIX_ENABLED) || defined(NX_ENABLED)
+#include "main/main.h"
+#include "os_nx.h"
 
-#include "thread_posix.h"
+#include <stdlib.h>
 
-#include "core/os/thread.h"
-#include "core/string/ustring.h"
-
-#ifdef PTHREAD_BSD_SET_NAME
-#include <pthread_np.h>
+static void nx_services_init() {
+	socketInitializeDefault();
+#ifdef NXLINK_ENABLED
+	nxlinkStdio();
 #endif
-
-static Error set_name(const String &p_name) {
-#ifdef PTHREAD_NO_RENAME
-	return ERR_UNAVAILABLE;
-
-#else
-
-#ifdef PTHREAD_RENAME_SELF
-
-	// check if thread is the same as caller
-	int err = pthread_setname_np(p_name.utf8().get_data());
-
-#else
-
-	pthread_t running_thread = pthread_self();
-#ifdef PTHREAD_BSD_SET_NAME
-	pthread_set_name_np(running_thread, p_name.utf8().get_data());
-	int err = 0; // Open/FreeBSD ignore errors in this function
-#elif defined(PTHREAD_NETBSD_SET_NAME)
-	int err = pthread_setname_np(running_thread, "%s", const_cast<char *>(p_name.utf8().get_data()));
-#else
-	int err = pthread_setname_np(running_thread, p_name.utf8().get_data());
-#endif // PTHREAD_BSD_SET_NAME
-
-#endif // PTHREAD_RENAME_SELF
-
-	return err == 0 ? OK : ERR_INVALID_PARAMETER;
-
-#endif // PTHREAD_NO_RENAME
+	romfsInit();
+	setInitialize();
+	csrngInitialize();
 }
 
-void init_thread_posix() {
-	Thread::_set_platform_functions({ .set_name = set_name });
+static void nx_services_exit() {
+	csrngExit();
+	setExit();
+	romfsExit();
+	socketExit();
 }
 
-#endif // UNIX_ENABLED || NX_ENABLED
+int main(int argc, char *argv[]) {
+	nx_services_init();
+
+	OS_NX os;
+
+	const char *execpath = (argc > 0 && argv[0]) ? argv[0] : "sdmc:/switch/godot.nro";
+	const int arg_count = argc > 0 ? argc - 1 : 0;
+
+	Error err = Main::setup(execpath, arg_count, arg_count > 0 ? &argv[1] : nullptr);
+	if (err != OK) {
+		nx_services_exit();
+		return err == ERR_HELP ? EXIT_SUCCESS : 255;
+	}
+
+	if (Main::start()) {
+		os.set_exit_code(EXIT_SUCCESS);
+		os.run();
+	}
+
+	Main::cleanup();
+
+	const int exit_code = os.get_exit_code();
+
+	nx_services_exit();
+
+	return exit_code;
+}

@@ -52,11 +52,19 @@ typedef void *ENetSocket;
 
 #define ENET_SOCKET_NULL NULL
 
+#ifdef NX_ENABLED
+#define ENET_HOST_TO_NET_16(value) (__builtin_bswap16(value)) /**< macro that converts host to net byte-order of a 16-bit value */
+#define ENET_HOST_TO_NET_32(value) (__builtin_bswap32(value)) /**< macro that converts host to net byte-order of a 32-bit value */
+
+#define ENET_NET_TO_HOST_16(value) (__builtin_bswap16(value)) /**< macro that converts net to host byte-order of a 16-bit value */
+#define ENET_NET_TO_HOST_32(value) (__builtin_bswap32(value)) /**< macro that converts net to host byte-order of a 32-bit value */
+#else
 #define ENET_HOST_TO_NET_16(value) (htons(value)) /**< macro that converts host to net byte-order of a 16-bit value */
 #define ENET_HOST_TO_NET_32(value) (htonl(value)) /**< macro that converts host to net byte-order of a 32-bit value */
 
 #define ENET_NET_TO_HOST_16(value) (ntohs(value)) /**< macro that converts net to host byte-order of a 16-bit value */
 #define ENET_NET_TO_HOST_32(value) (ntohl(value)) /**< macro that converts net to host byte-order of a 32-bit value */
+#endif
 
 typedef struct
 {

@@ -555,6 +555,13 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 		}
 #endif
 
+#ifdef NX_ENABLED
+		if (!found) {
+			// Attempt to load the PCK bundled in the NRO/NSP romfs.
+			found = _load_resource_pack("romfs:/game.pck");
+		}
+#endif
+
 		if (!found) {
 			// Try to load data pack at the location of the executable.
 			// As mentioned above, we have two potential names to attempt.
