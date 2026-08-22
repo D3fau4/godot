@@ -39,6 +39,11 @@
 #include "gl_manager_nx.h"
 #endif
 
+#ifdef VULKAN_ENABLED
+#include "drivers/vulkan/rendering_device_vulkan.h"
+#include "vulkan_context_nx.h"
+#endif
+
 class DisplayServerNX : public DisplayServer {
 	enum {
 		HANDHELD_WIDTH = 1280,
@@ -71,6 +76,11 @@ class DisplayServerNX : public DisplayServer {
 
 #ifdef GLES3_ENABLED
 	GLManagerNX *gl_manager = nullptr;
+#endif
+
+#ifdef VULKAN_ENABLED
+	VulkanContextNX *context_vulkan = nullptr;
+	RenderingDeviceVulkan *rendering_device_vulkan = nullptr;
 #endif
 
 	void _window_callback(const Callable &p_callable, const Variant &p_arg, bool p_deferred = false) const;

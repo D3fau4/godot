@@ -39,6 +39,10 @@
 #include "drivers/gles3/rasterizer_gles3.h"
 #endif
 
+#ifdef VULKAN_ENABLED
+#include "servers/rendering/renderer_rd/renderer_compositor_rd.h"
+#endif
+
 #include <string.h>
 
 DisplayServerNX *DisplayServerNX::get_singleton() {
@@ -297,9 +301,20 @@ void DisplayServerNX::window_set_vsync_mode(VSyncMode p_vsync_mode, WindowID p_w
 		gl_manager->set_use_vsync(p_vsync_mode != VSYNC_DISABLED);
 	}
 #endif
+
+#ifdef VULKAN_ENABLED
+	if (context_vulkan) {
+		context_vulkan->set_vsync_mode(p_window, p_vsync_mode);
+	}
+#endif
 }
 
 DisplayServer::VSyncMode DisplayServerNX::window_get_vsync_mode(WindowID p_window) const {
+#ifdef VULKAN_ENABLED
+	if (context_vulkan) {
+		return context_vulkan->get_vsync_mode(p_window);
+	}
+#endif
 	return vsync_mode;
 }
 
@@ -343,6 +358,17 @@ void DisplayServerNX::_update_operation_mode() {
 	if (gl_manager && gl_manager->resize(new_size) != OK) {
 		ERR_PRINT("NX: Could not resize the rendering surface.");
 		return;
+	}
+#endif
+
+#ifdef VULKAN_ENABLED
+	if (context_vulkan) {
+		NWindow *window = nwindowGetDefault();
+		if (window == nullptr || R_FAILED(nwindowSetDimensions(window, new_size.width, new_size.height))) {
+			ERR_PRINT("NX: Could not resize the native window.");
+			return;
+		}
+		context_vulkan->window_resize(MAIN_WINDOW_ID, new_size.width, new_size.height);
 	}
 #endif
 
@@ -458,6 +484,10 @@ void DisplayServerNX::set_icon(const Ref<Image> &p_icon) {
 Vector<String> DisplayServerNX::get_rendering_drivers_func() {
 	Vector<String> drivers;
 
+#ifdef VULKAN_ENABLED
+	drivers.push_back("vulkan");
+#endif
+
 #ifdef GLES3_ENABLED
 	drivers.push_back("opengl3");
 #endif
@@ -489,6 +519,36 @@ DisplayServerNX::DisplayServerNX(const String &p_rendering_driver, WindowMode p_
 	hidInitializeTouchScreen();
 #endif
 
+#ifdef VULKAN_ENABLED
+	if (rendering_driver == "vulkan") {
+		NWindow *window = nwindowGetDefault();
+		if (window == nullptr || R_FAILED(nwindowSetDimensions(window, window_size.width, window_size.height))) {
+			r_error = ERR_CANT_CREATE;
+			ERR_FAIL_MSG("NX: Could not configure the native window.");
+		}
+
+		context_vulkan = memnew(VulkanContextNX);
+		if (context_vulkan->initialize() != OK) {
+			memdelete(context_vulkan);
+			context_vulkan = nullptr;
+			r_error = ERR_CANT_CREATE;
+			ERR_FAIL_MSG("NX: Could not initialize the Vulkan context.");
+		}
+
+		if (context_vulkan->window_create(window, p_vsync_mode, window_size.width, window_size.height) != OK) {
+			memdelete(context_vulkan);
+			context_vulkan = nullptr;
+			r_error = ERR_CANT_CREATE;
+			ERR_FAIL_MSG("NX: Could not create the Vulkan window.");
+		}
+
+		rendering_device_vulkan = memnew(RenderingDeviceVulkan);
+		rendering_device_vulkan->initialize(context_vulkan);
+
+		RendererCompositorRD::make_current();
+	}
+#endif
+
 #ifdef GLES3_ENABLED
 	if (rendering_driver == "opengl3") {
 		gl_manager = memnew(GLManagerNX);
@@ -515,6 +575,20 @@ DisplayServerNX::~DisplayServerNX() {
 	if (gl_manager) {
 		memdelete(gl_manager);
 		gl_manager = nullptr;
+	}
+#endif
+
+#ifdef VULKAN_ENABLED
+	if (rendering_device_vulkan) {
+		rendering_device_vulkan->finalize();
+		memdelete(rendering_device_vulkan);
+		rendering_device_vulkan = nullptr;
+	}
+
+	if (context_vulkan) {
+		context_vulkan->window_destroy(MAIN_WINDOW_ID);
+		memdelete(context_vulkan);
+		context_vulkan = nullptr;
 	}
 #endif
 }
