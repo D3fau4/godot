@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  godot.h                                                               */
+/*  vulkan_context_nx.cpp                                                 */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,62 +28,42 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-/**
- @file  godot.h
- @brief ENet Godot header
-*/
+#include "vulkan_context_nx.h"
 
-#ifndef __ENET_GODOT_H__
-#define __ENET_GODOT_H__
+#ifdef VULKAN_ENABLED
 
-#ifdef WINDOWS_ENABLED
-#include <stdint.h>
-#include <winsock2.h>
-#endif
-#ifdef UNIX_ENABLED
-#include <arpa/inet.h>
-#endif
+#include "drivers/vulkan/godot_vulkan.h"
 
-#ifdef MSG_MAXIOVLEN
-#define ENET_BUFFER_MAXIMUM MSG_MAXIOVLEN
-#endif
+const char *VulkanContextNX::_get_platform_surface_extension() const {
+	return VK_NN_VI_SURFACE_EXTENSION_NAME;
+}
 
-typedef void *ENetSocket;
+bool VulkanContextNX::_use_validation_layers() {
+	return false;
+}
 
-#define ENET_SOCKET_NULL NULL
+Error VulkanContextNX::window_create(NWindow *p_window, DisplayServer::VSyncMode p_vsync_mode, int p_width, int p_height) {
+	ERR_FAIL_NULL_V(p_window, ERR_INVALID_PARAMETER);
 
-#ifdef NX_ENABLED
-#define ENET_HOST_TO_NET_16(value) (__builtin_bswap16(value)) /**< macro that converts host to net byte-order of a 16-bit value */
-#define ENET_HOST_TO_NET_32(value) (__builtin_bswap32(value)) /**< macro that converts host to net byte-order of a 32-bit value */
+	VkViSurfaceCreateInfoNN create_info;
+	create_info.sType = VK_STRUCTURE_TYPE_VI_SURFACE_CREATE_INFO_NN;
+	create_info.pNext = nullptr;
+	create_info.flags = 0;
+	create_info.window = p_window;
 
-#define ENET_NET_TO_HOST_16(value) (__builtin_bswap16(value)) /**< macro that converts net to host byte-order of a 16-bit value */
-#define ENET_NET_TO_HOST_32(value) (__builtin_bswap32(value)) /**< macro that converts net to host byte-order of a 32-bit value */
-#else
-#define ENET_HOST_TO_NET_16(value) (htons(value)) /**< macro that converts host to net byte-order of a 16-bit value */
-#define ENET_HOST_TO_NET_32(value) (htonl(value)) /**< macro that converts host to net byte-order of a 32-bit value */
+	VkSurfaceKHR surface = VK_NULL_HANDLE;
+	VkResult err = vkCreateViSurfaceNN(get_instance(), &create_info, nullptr, &surface);
+	if (err != VK_SUCCESS) {
+		ERR_FAIL_V_MSG(ERR_CANT_CREATE, "vkCreateViSurfaceNN failed with error " + itos(err));
+	}
 
-#define ENET_NET_TO_HOST_16(value) (ntohs(value)) /**< macro that converts net to host byte-order of a 16-bit value */
-#define ENET_NET_TO_HOST_32(value) (ntohl(value)) /**< macro that converts net to host byte-order of a 32-bit value */
-#endif
+	return _window_create(DisplayServer::MAIN_WINDOW_ID, p_vsync_mode, surface, p_width, p_height);
+}
 
-typedef struct
-{
-	void *data;
-	size_t dataLength;
-} ENetBuffer;
+VulkanContextNX::VulkanContextNX() {
+}
 
-#define ENET_CALLBACK
+VulkanContextNX::~VulkanContextNX() {
+}
 
-#define ENET_API extern
-
-typedef void ENetSocketSet;
-
-typedef struct _ENetAddress
-{
-   uint8_t host[16];
-   uint16_t port;
-   uint8_t wildcard;
-} ENetAddress;
-#define enet_host_equal(host_a, host_b) (memcmp(&host_a, &host_b,16) == 0)
-
-#endif /* __ENET_GODOT_H__ */
+#endif // VULKAN_ENABLED

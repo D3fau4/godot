@@ -19,6 +19,8 @@ elif env["platform"] == "ios":
     env.AppendUnique(CPPDEFINES=["VK_USE_PLATFORM_IOS_MVK"])
 elif env["platform"] == "linuxbsd" and env["x11"]:
     env.AppendUnique(CPPDEFINES=["VK_USE_PLATFORM_XLIB_KHR"])
+elif env["platform"] == "nx":
+    env.AppendUnique(CPPDEFINES=["VK_USE_PLATFORM_VI_NN"])
 elif env["platform"] == "macos":
     env.AppendUnique(CPPDEFINES=["VK_USE_PLATFORM_MACOS_MVK"])
 elif env["platform"] == "windows":
