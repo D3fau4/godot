@@ -31,14 +31,24 @@
 #include "main/main.h"
 #include "os_nx.h"
 
+#include <stdio.h>
 #include <stdlib.h>
+
+static bool romfs_mounted = false;
 
 static void nx_services_init() {
 	socketInitializeDefault();
 #ifdef NXLINK_ENABLED
 	nxlinkStdio();
 #endif
-	romfsInit();
+
+	Result rc = romfsInit();
+	romfs_mounted = R_SUCCEEDED(rc);
+	if (!romfs_mounted) {
+		printf("NX: romfsInit() failed (0x%08x), romfs:/game.pck will not be available.\n", rc);
+		fflush(stdout);
+	}
+
 	setInitialize();
 	csrngInitialize();
 }
@@ -46,17 +56,19 @@ static void nx_services_init() {
 static void nx_services_exit() {
 	csrngExit();
 	setExit();
-	romfsExit();
+	if (romfs_mounted) {
+		romfsExit();
+	}
 	socketExit();
 }
 
 int main(int argc, char *argv[]) {
 	nx_services_init();
 
-	OS_NX os;
-
 	const char *execpath = (argc > 0 && argv[0]) ? argv[0] : "sdmc:/switch/godot.nro";
 	const int arg_count = argc > 0 ? argc - 1 : 0;
+
+	OS_NX os(execpath);
 
 	Error err = Main::setup(execpath, arg_count, arg_count > 0 ? &argv[1] : nullptr);
 	if (err != OK) {

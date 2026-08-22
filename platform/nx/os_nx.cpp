@@ -274,6 +274,10 @@ uint64_t OS_NX::get_ticks_usec() const {
 	return armTicksToNs(armGetSystemTick() - start_tick) / 1000ULL;
 }
 
+String OS_NX::get_executable_path() const {
+	return executable_path;
+}
+
 String OS_NX::get_data_path() const {
 	return "sdmc:/switch";
 }
@@ -330,7 +334,9 @@ void OS_NX::run() {
 	main_loop->finalize();
 }
 
-OS_NX::OS_NX() {
+OS_NX::OS_NX(const char *p_execpath) {
+	executable_path = String::utf8(p_execpath);
+
 	AudioDriverManager::add_driver(&audio_driver_nx);
 
 	DisplayServerNX::register_nx_driver();
