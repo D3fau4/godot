@@ -176,6 +176,16 @@ String OS_NX::get_model_name() const {
 	return appletGetOperationMode() == AppletOperationMode_Console ? "Nintendo Switch (docked)" : "Nintendo Switch (handheld)";
 }
 
+int OS_NX::get_processor_count() const {
+	u64 core_mask = 0;
+	if (R_FAILED(svcGetInfo(&core_mask, InfoType_CoreMask, CUR_PROCESS_HANDLE, 0))) {
+		return 1;
+	}
+
+	const int count = __builtin_popcountll(core_mask);
+	return count > 0 ? count : 1;
+}
+
 String OS_NX::get_locale() const {
 	u64 language_code = 0;
 	if (R_FAILED(setGetSystemLanguage(&language_code))) {

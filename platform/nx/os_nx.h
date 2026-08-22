@@ -83,6 +83,8 @@ public:
 	virtual String get_model_name() const override;
 	virtual String get_locale() const override;
 
+	virtual int get_processor_count() const override;
+
 	virtual MainLoop *get_main_loop() const override;
 
 	virtual DateTime get_datetime(bool p_utc = false) const override;
