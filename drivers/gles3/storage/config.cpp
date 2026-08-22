@@ -93,6 +93,9 @@ Config::Config() {
 	}
 
 	multiview_supported = extensions.has("GL_OVR_multiview2") || extensions.has("GL_OVR_multiview");
+#ifdef NX_ENABLED
+	multiview_supported = false;
+#endif
 #ifdef ANDROID_ENABLED
 	if (multiview_supported) {
 		eglFramebufferTextureMultiviewOVR = (PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC)eglGetProcAddress("glFramebufferTextureMultiviewOVR");
