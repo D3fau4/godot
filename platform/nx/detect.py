@@ -129,9 +129,7 @@ def get_flags():
         ("opengl3", not has_nvk()),
         ("use_volk", has_nvk()),
         ("builtin_enet", False),
-        ("builtin_freetype", False),
         ("builtin_libogg", False),
-        ("builtin_libpng", False),
         ("builtin_libtheora", False),
         ("builtin_libvorbis", False),
         ("builtin_libwebp", False),
@@ -139,7 +137,6 @@ def get_flags():
         ("builtin_miniupnpc", False),
         ("builtin_pcre2", False),
         ("builtin_wslay", False),
-        ("builtin_zlib", False),
         ("builtin_zstd", False),
         ("builtin_pcre2_with_jit", False),
         ("module_denoise_enabled", False),
@@ -257,7 +254,7 @@ def configure(env: "Environment"):
 
     if not env["builtin_freetype"]:
         env.Append(CCFLAGS=["-isystem", portlibs + "/include/freetype2"])
-        env.Append(LIBS=["freetype", "bz2", "harfbuzz"])
+        env.Append(LIBS=["freetype", "bz2"])
 
     if not env["builtin_libpng"]:
         env.Append(CCFLAGS=["-isystem", portlibs + "/include/libpng16"])

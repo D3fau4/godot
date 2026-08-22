@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  godot_nx.cpp                                                          */
+/*  export.cpp                                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,64 +28,26 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "main/main.h"
-#include "os_nx.h"
+#include "export.h"
 
-#include <stdio.h>
-#include <stdlib.h>
+#include "editor/editor_settings.h"
+#include "editor/export/editor_export.h"
+#include "export_plugin.h"
 
-static bool romfs_mounted = false;
+void register_nx_exporter() {
+	String ext = (OS::get_singleton()->get_name() == "Windows") ? "*.exe" : "";
 
-static void nx_services_init() {
-	socketInitializeDefault();
-#ifdef NXLINK_ENABLED
-	nxlinkStdio();
-#endif
+	EDITOR_DEF("export/nx/devkitpro", "");
+	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::STRING, "export/nx/devkitpro", PROPERTY_HINT_GLOBAL_DIR));
 
-	Result rc = romfsInit();
-	romfs_mounted = R_SUCCEEDED(rc);
-	if (!romfs_mounted) {
-		printf("NX: romfsInit() failed (0x%08x), romfs:/game.pck will not be available.\n", rc);
-		fflush(stdout);
-	}
+	EDITOR_DEF("export/nx/nxlink", "");
+	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::STRING, "export/nx/nxlink", PROPERTY_HINT_GLOBAL_FILE, ext));
 
-	setInitialize();
-	csrngInitialize();
-}
+	EDITOR_DEF("export/nx/nxlink_host", "");
+	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::STRING, "export/nx/nxlink_host", PROPERTY_HINT_PLACEHOLDER_TEXT, "192.168.1.10"));
 
-static void nx_services_exit() {
-	csrngExit();
-	setExit();
-	if (romfs_mounted) {
-		romfsExit();
-	}
-	socketExit();
-}
+	Ref<EditorExportPlatformNX> platform;
+	platform.instantiate();
 
-int main(int argc, char *argv[]) {
-	nx_services_init();
-
-	const char *execpath = (argc > 0 && argv[0]) ? argv[0] : "sdmc:/switch/godot.nro";
-	const int arg_count = argc > 0 ? argc - 1 : 0;
-
-	OS_NX os(execpath);
-
-	Error err = Main::setup(execpath, arg_count, arg_count > 0 ? &argv[1] : nullptr);
-	if (err != OK) {
-		nx_services_exit();
-		return err == ERR_HELP ? EXIT_SUCCESS : 255;
-	}
-
-	if (Main::start()) {
-		os.set_exit_code(EXIT_SUCCESS);
-		os.run();
-	}
-
-	Main::cleanup();
-
-	const int exit_code = os.get_exit_code();
-
-	nx_services_exit();
-
-	return exit_code;
+	EditorExport::get_singleton()->add_export_platform(platform);
 }

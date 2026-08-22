@@ -42,6 +42,7 @@ class OS_NX : public OS {
 	AudioDriverNX audio_driver_nx;
 	JoypadNX *joypad = nullptr;
 
+	String executable_path;
 	uint64_t start_tick = 0;
 
 protected:
@@ -90,6 +91,7 @@ public:
 	virtual void delay_usec(uint32_t p_usec) const override;
 	virtual uint64_t get_ticks_usec() const override;
 
+	virtual String get_executable_path() const override;
 	virtual String get_data_path() const override;
 	virtual String get_config_path() const override;
 	virtual String get_cache_path() const override;
@@ -99,7 +101,7 @@ public:
 
 	void run();
 
-	OS_NX();
+	OS_NX(const char *p_execpath);
 	~OS_NX();
 };
 
