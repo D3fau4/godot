@@ -25,6 +25,43 @@ scons platform=nx target=template_release
 scons platform=nx target=template_debug
 ```
 
+## Vulkan
+
+A Vulkan build needs the driver from
+[mesa-nvk-horizon](https://github.com/D3fau4/mesa-nvk-horizon), which is NVK with a
+Horizon kernel-mode backend. There is no loader and no shared library on this platform:
+the driver is linked into the executable and reached through its ICD entry point.
+
+Build it there (`scripts/build-mesa-nvk.sh`, then `scripts/package-horizon.sh`) and
+point this build at the result:
+
+```
+scons platform=nx target=template_release \
+      nvk_path=/path/to/mesa-nvk-horizon/build/mesa-nvk \
+      horizon_path=/path/to/mesa-nvk-horizon/build/pkg
+```
+
+`horizon_path` defaults to `pkg/` beside `nvk_path`, and both can also come from
+`$NVK_PATH` and `$HORIZON_PATH`. Missing archives stop the build and are named.
+
+Enabling Vulkan turns `opengl3` off: switch-mesa's GLES3 driver and NVK are two Mesa
+builds that define the same symbols, so one executable cannot hold both. Pass
+`opengl3=yes` to try anyway.
+
+The driver and the toolchain must come from the same devkitA64, and the Mesa build must
+have been made with `-fPIE` rather than `-fPIC`: on devkitA64 gcc 15.2.0 `-mtp=soft
+-fPIC` miscompiles every thread-local access. `scripts/check-tls-relocs.sh` in
+mesa-nvk-horizon is the check for it.
+
+A project selects the renderer with `rendering/renderer/rendering_method.nx`
+(`mobile` or `forward_plus`) and `rendering/rendering_device/driver.nx` (`vulkan`).
+
+Vulkan needs the memory a title takeover gives (3155 MiB); the album applet's 237 MiB
+is not enough.
+
+**None of this has run on a console.** The engine side compiles and the driver
+presents on hardware on its own, but no Godot project has been drawn with it yet.
+
 Only export templates can be built; the editor is not supported on this platform.
 The result is an ELF in `bin/`, which is turned into an NRO with the devkitPro
 tools:
@@ -41,9 +78,8 @@ The engine looks for the project data in this order:
 
 ## Notes
 
-- The renderer is Compatibility (OpenGL ES 3) only; there is no Vulkan driver
-  for Switch homebrew. `rendering/renderer/rendering_method.nx` defaults to
-  `gl_compatibility`.
+- The default renderer is Compatibility (OpenGL ES 3). Vulkan is available in a
+  build made against mesa-nvk-horizon; see above.
 - The window follows the console operation mode: 1280x720 in handheld,
   1920x1080 when docked.
 - `user://` maps to `sdmc:/switch/godot/app_userdata/<project name>`.
