@@ -65,6 +65,15 @@ static void nx_services_exit() {
 int main(int argc, char *argv[]) {
 	nx_services_init();
 
+#ifdef VULKAN_ENABLED
+	// NVK refuses to enumerate the Tegra X1 unless the application asks for it:
+	// the driver is not conformant on this GPU, so it returns
+	// VK_ERROR_INCOMPATIBLE_DRIVER and no physical device is reported. Set
+	// before Main::setup(), which is what brings the display server and the
+	// Vulkan instance up. An existing value is left alone.
+	setenv("NVK_I_WANT_A_BROKEN_VULKAN_DRIVER", "1", 0);
+#endif
+
 	const char *execpath = (argc > 0 && argv[0]) ? argv[0] : "sdmc:/switch/godot.nro";
 	const int arg_count = argc > 0 ? argc - 1 : 0;
 
