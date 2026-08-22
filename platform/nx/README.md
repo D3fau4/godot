@@ -71,8 +71,13 @@ is not enough.
 
 Verified so far: the whole engine cross-compiles and **links** against a real NVK build
 (Mesa 26.1.7 + the 81 mesa-nvk-horizon patches, built with
-`mesa-nvk-horizon/nx-dev-mesa`), producing a 73.8 MB ELF and an NRO. The driver is
-inside it — `nvkmd_horizon`, the Horizon WSI and NAK are all in the binary.
+`mesa-nvk-horizon/nx-dev-mesa`), producing a 74.1 MB ELF and an NRO. The driver is
+inside it — `nvkmd_horizon`, the Horizon WSI and NAK are all in the binary. The default
+GLES3 build is unaffected and still links at 63.0 MB.
+
+The two do not collide over zlib even though the engine now bundles its own: the driver
+group resolves zlib from portlibs before the engine's archives are reached, so their
+members are never pulled.
 
 **It has never run on a console.** Nothing here has drawn a frame yet.
 
