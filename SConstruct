@@ -115,6 +115,9 @@ if platform_arg == "android":
 elif platform_arg == "web":
     # Use generic POSIX build toolchain for Emscripten.
     custom_tools = ["cc", "c++", "ar", "link", "textfile", "zip"]
+elif platform_arg == "nx":
+    # Use generic POSIX build toolchain for devkitA64.
+    custom_tools = ["cc", "c++", "as", "ar", "link"]
 elif os.name == "nt" and methods.get_cmdline_bool("use_mingw", False):
     custom_tools = ["mingw"]
 
