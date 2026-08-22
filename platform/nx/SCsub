@@ -12,4 +12,7 @@ common_nx = [
 if env["opengl3"]:
     common_nx.append("gl_manager_nx.cpp")
 
+if env["vulkan"]:
+    common_nx.append("vulkan_context_nx.cpp")
+
 prog = env.add_program("#bin/godot", ["godot_nx.cpp"] + common_nx)

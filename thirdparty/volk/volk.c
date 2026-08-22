@@ -11,6 +11,9 @@
 	#else
 		typedef int (__stdcall* FARPROC)(void);
 	#endif
+/* -- GODOT start -- Horizon has no dynamic linker, so nothing to include. */
+#elif defined(__SWITCH__)
+/* -- GODOT end -- */
 #else
 #	include <dlfcn.h>
 #endif
@@ -44,7 +47,11 @@ static PFN_vkVoidFunction vkGetDeviceProcAddrStub(void* context, const char* nam
 
 VkResult volkInitialize(void)
 {
-#if defined(_WIN32)
+/* -- GODOT start -- Horizon links the driver in; volkInitializeCustom() is the entry. */
+#if defined(__SWITCH__)
+	return VK_ERROR_INITIALIZATION_FAILED;
+/* -- GODOT end -- */
+#elif defined(_WIN32)
 	HMODULE module = LoadLibraryA("vulkan-1.dll");
 	if (!module)
 		return VK_ERROR_INITIALIZATION_FAILED;

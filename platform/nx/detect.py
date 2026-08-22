@@ -7,6 +7,34 @@ if TYPE_CHECKING:
 
 MSYS_DEVKITPRO = "/opt/devkitpro"
 
+# The NVK archive that must be linked whole: its dispatch tables are weak
+# symbols, and an archive member reached only by a weak reference is never
+# pulled in, which leaves a NULL entry point instead of a link error.
+NVK_WHOLE_LIB = "src/nouveau/vulkan/libnvk.a"
+
+# The rest of the mesa-nvk-horizon link line, in the order its meson.build
+# lists them. They have cycles, hence the group.
+NVK_LIBS = [
+    "src/nouveau/rust_runtime/libnouveau_rust_runtime.a",
+    "src/nouveau/compiler/libnak.a",
+    "src/nouveau/nil/liblibnil_format_table.a",
+    "src/nouveau/mme/libnouveau_mme.a",
+    "src/nouveau/headers/libnvidia_headers_c.a",
+    "src/vulkan/util/libvulkan_util.a",
+    "src/vulkan/wsi/libvulkan_wsi.a",
+    "src/compiler/spirv/libvtn.a",
+    "src/compiler/nir/libnir.a",
+    "src/compiler/libcompiler.a",
+    "src/compiler/rust/libcompiler_c_helpers.a",
+    "src/util/libxmlconfig.a",
+    "src/util/libmesa_util.a",
+    "src/util/libmesa_util_simd.a",
+    "src/util/blake3/libblake3.a",
+    "src/c11/impl/libmesa_util_c11.a",
+]
+
+HORIZON_LIBS = ["lib/libhorizon_gpu.a", "lib/libhorizon_compat.a"]
+
 
 def is_active():
     return True
@@ -33,6 +61,35 @@ def get_devkitpro_path():
     return path
 
 
+def _arg(name, env_var):
+    from SCons.Script import ARGUMENTS
+
+    path = ARGUMENTS.get(name, os.environ.get(env_var, ""))
+    return path.replace("\\", "/").rstrip("/")
+
+
+def get_nvk_path():
+    return _arg("nvk_path", "NVK_PATH")
+
+
+def get_horizon_path():
+    path = _arg("horizon_path", "HORIZON_PATH")
+    if path:
+        return path
+
+    nvk = get_nvk_path()
+    if not nvk:
+        return ""
+
+    # scripts/package-horizon.sh writes build/pkg beside build/mesa-nvk.
+    return os.path.dirname(nvk) + "/pkg"
+
+
+def has_nvk():
+    nvk = get_nvk_path()
+    return bool(nvk) and os.path.isfile(os.path.join(nvk, NVK_WHOLE_LIB))
+
+
 def can_build():
     path = get_devkitpro_path()
 
@@ -57,6 +114,8 @@ def get_opts():
     return [
         BoolVariable("touch", "Enable touch events", True),
         BoolVariable("nxlink", "Redirect stdout/stderr to nxlink on debug builds", True),
+        ("nvk_path", "Path to a mesa-nvk-horizon NVK build directory; enables the Vulkan driver", get_nvk_path()),
+        ("horizon_path", "Path to a packaged horizon_gpu tree; defaults to pkg/ beside nvk_path", get_horizon_path()),
     ]
 
 
@@ -64,9 +123,11 @@ def get_flags():
     return [
         ("arch", "arm64"),
         ("target", "template_release"),
-        ("vulkan", False),
-        ("opengl3", True),
-        ("use_volk", False),
+        ("vulkan", has_nvk()),
+        # One Mesa per binary: switch-mesa's GLES3 driver and NVK define the
+        # same util symbols, so linking both is a multiple-definition error.
+        ("opengl3", not has_nvk()),
+        ("use_volk", has_nvk()),
         ("builtin_enet", False),
         ("builtin_freetype", False),
         ("builtin_libogg", False),
@@ -149,6 +210,41 @@ def configure(env: "Environment"):
 
     if env["nxlink"] and env.debug_features:
         env.Append(CPPDEFINES=["NXLINK_ENABLED"])
+
+    if env["vulkan"]:
+        nvk = (env["nvk_path"] or get_nvk_path()).replace("\\", "/").rstrip("/")
+        horizon = (env["horizon_path"] or get_horizon_path()).replace("\\", "/").rstrip("/")
+
+        archives = [nvk + "/" + NVK_WHOLE_LIB] + [nvk + "/" + lib for lib in NVK_LIBS]
+        archives += [horizon + "/" + lib for lib in HORIZON_LIBS]
+
+        missing = [a for a in archives if not os.path.isfile(a)]
+        if missing:
+            print("Vulkan is enabled for NX but these mesa-nvk-horizon archives are missing:")
+            for a in missing:
+                print("  " + a)
+            print("Build them with scripts/build-mesa-nvk.sh and scripts/package-horizon.sh,")
+            print("then pass nvk_path= and horizon_path=.")
+            sys.exit(255)
+
+        env.Append(CPPDEFINES=["VULKAN_ENABLED", "VK_USE_PLATFORM_VI_NN"])
+        env.Append(CCFLAGS=["-isystem", horizon + "/include"])
+
+        # The whole driver goes in LINKFLAGS, ahead of the engine objects. The
+        # only symbol the engine takes from it is vk_icdGetInstanceProcAddr,
+        # which is in libnvk.a and therefore always present; everything else is
+        # a reference between these archives, which the group resolves.
+        env.Append(
+            LINKFLAGS=[
+                "-Wl,--start-group",
+                "-Wl,--whole-archive",
+                nvk + "/" + NVK_WHOLE_LIB,
+                "-Wl,--no-whole-archive",
+            ]
+            + [nvk + "/" + lib for lib in NVK_LIBS]
+            + [horizon + "/" + lib for lib in HORIZON_LIBS]
+            + ["-L" + portlibs + "/lib", "-lstdc++", "-lzstd", "-lz", "-Wl,--end-group"]
+        )
 
     if env["opengl3"]:
         env.Append(CPPDEFINES=["GLES3_ENABLED", "EGL_ENABLED"])
