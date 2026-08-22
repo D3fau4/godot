@@ -44,6 +44,17 @@ scons platform=nx target=template_release \
 `horizon_path` defaults to `pkg/` beside `nvk_path`, and both can also come from
 `$NVK_PATH` and `$HORIZON_PATH`. Missing archives stop the build and are named.
 
+Meson writes those archives thin: they hold paths to the object files rather than the
+objects, resolved against the archive's own directory. Point `nvk_path` at the build
+directory itself (`build/mesa-nvk`) so the `.a.p/` directories sit beside them. The
+copies `scripts/package-horizon.sh` stages under `build/pkg/lib/` are not linkable on
+their own for that reason; convert them first if you want a self-contained tree:
+
+```
+cd /path/to/mesa-nvk-horizon
+aarch64-none-elf-ar t build/meson/libhorizon_gpu.a | xargs aarch64-none-elf-ar qcs out.a
+```
+
 Enabling Vulkan turns `opengl3` off: switch-mesa's GLES3 driver and NVK are two Mesa
 builds that define the same symbols, so one executable cannot hold both. Pass
 `opengl3=yes` to try anyway.
@@ -59,8 +70,12 @@ A project selects the renderer with `rendering/renderer/rendering_method.nx`
 Vulkan needs the memory a title takeover gives (3155 MiB); the album applet's 237 MiB
 is not enough.
 
-**None of this has run on a console.** The engine side compiles and the driver
-presents on hardware on its own, but no Godot project has been drawn with it yet.
+Verified so far: the whole engine cross-compiles and **links** against a real NVK build
+(Mesa 26.1.7 + the 81 mesa-nvk-horizon patches, built with
+`mesa-nvk-horizon/nx-dev-mesa`), producing a 73.8 MB ELF and an NRO. The driver is
+inside it — `nvkmd_horizon`, the Horizon WSI and NAK are all in the binary.
+
+**It has never run on a console.** Nothing here has drawn a frame yet.
 
 Only export templates can be built; the editor is not supported on this platform.
 The result is an ELF in `bin/`, which is turned into an NRO with the devkitPro
