@@ -363,11 +363,9 @@ void DisplayServerNX::_update_operation_mode() {
 
 #ifdef VULKAN_ENABLED
 	if (context_vulkan) {
-		NWindow *window = nwindowGetDefault();
-		if (window == nullptr || R_FAILED(nwindowSetDimensions(window, new_size.width, new_size.height))) {
-			ERR_PRINT("NX: Could not resize the native window.");
-			return;
-		}
+		// Not nwindowSetDimensions(): it refuses to change the window while
+		// buffers are registered on it, and the swapchain holds them until it
+		// is recreated. Recreating it is what resizes the window.
 		context_vulkan->window_resize(MAIN_WINDOW_ID, new_size.width, new_size.height);
 	}
 #endif
