@@ -46,6 +46,10 @@
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
 #define APP_SHORT_NAME "GodotEngine"
 
+#ifdef NX_ENABLED
+extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance instance, const char *pName);
+#endif
+
 VulkanHooks *VulkanContext::vulkan_hooks = nullptr;
 
 Vector<VkAttachmentReference> VulkanContext::_convert_VkAttachmentReference2(uint32_t p_count, const VkAttachmentReference2 *p_refs) {
@@ -2165,9 +2169,13 @@ Error VulkanContext::_update_swap_chain(Window *window) {
 
 Error VulkanContext::initialize() {
 #ifdef USE_VOLK
+#ifdef NX_ENABLED
+	volkInitializeCustom((PFN_vkGetInstanceProcAddr)vk_icdGetInstanceProcAddr);
+#else
 	if (volkInitialize() != VK_SUCCESS) {
 		return FAILED;
 	}
+#endif
 #endif
 
 	Error err = _create_instance();

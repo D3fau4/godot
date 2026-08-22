@@ -765,6 +765,12 @@ Files extracted from upstream source:
 - `volk.h`, `volk.c`
 - `LICENSE.md`
 
+Patches:
+
+- `volk.c`: the `dlopen()` loader is compiled out on Horizon (`__SWITCH__`),
+  which has no dynamic linker. That platform links the driver into the binary
+  and initializes volk with `volkInitializeCustom()`.
+
 
 ## vulkan
 

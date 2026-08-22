@@ -7,33 +7,36 @@ if TYPE_CHECKING:
 
 MSYS_DEVKITPRO = "/opt/devkitpro"
 
+# Where scripts/package-portlibs.sh installs the driver, relative to devkitPro.
+NVK_LIBDIR = "portlibs/switch/lib/nvk"
+
 # The NVK archive that must be linked whole: its dispatch tables are weak
 # symbols, and an archive member reached only by a weak reference is never
 # pulled in, which leaves a NULL entry point instead of a link error.
-NVK_WHOLE_LIB = "src/nouveau/vulkan/libnvk.a"
+NVK_WHOLE_LIB = "nvk"
 
-# The rest of the mesa-nvk-horizon link line, in the order its meson.build
-# lists them. They have cycles, hence the group.
+# The rest of the mesa-nvk-horizon link line, in the order nvk.pc lists them.
+# They have cycles, hence the group.
 NVK_LIBS = [
-    "src/nouveau/rust_runtime/libnouveau_rust_runtime.a",
-    "src/nouveau/compiler/libnak.a",
-    "src/nouveau/nil/liblibnil_format_table.a",
-    "src/nouveau/mme/libnouveau_mme.a",
-    "src/nouveau/headers/libnvidia_headers_c.a",
-    "src/vulkan/util/libvulkan_util.a",
-    "src/vulkan/wsi/libvulkan_wsi.a",
-    "src/compiler/spirv/libvtn.a",
-    "src/compiler/nir/libnir.a",
-    "src/compiler/libcompiler.a",
-    "src/compiler/rust/libcompiler_c_helpers.a",
-    "src/util/libxmlconfig.a",
-    "src/util/libmesa_util.a",
-    "src/util/libmesa_util_simd.a",
-    "src/util/blake3/libblake3.a",
-    "src/c11/impl/libmesa_util_c11.a",
+    "nouveau_rust_runtime",
+    "nak",
+    "libnil_format_table",
+    "nouveau_mme",
+    "nvidia_headers_c",
+    "vulkan_util",
+    "vulkan_wsi",
+    "vtn",
+    "nir",
+    "compiler",
+    "compiler_c_helpers",
+    "xmlconfig",
+    "mesa_util",
+    "mesa_util_simd",
+    "blake3",
+    "mesa_util_c11",
 ]
 
-HORIZON_LIBS = ["lib/libhorizon_gpu.a", "lib/libhorizon_compat.a"]
+HORIZON_LIBS = ["horizon_gpu", "horizon_compat"]
 
 
 def is_active():
@@ -61,33 +64,29 @@ def get_devkitpro_path():
     return path
 
 
-def _arg(name, env_var):
-    from SCons.Script import ARGUMENTS
-
-    path = ARGUMENTS.get(name, os.environ.get(env_var, ""))
-    return path.replace("\\", "/").rstrip("/")
+def get_nvk_libdir():
+    devkitpro = get_devkitpro_path()
+    return devkitpro + "/" + NVK_LIBDIR if devkitpro else ""
 
 
-def get_nvk_path():
-    return _arg("nvk_path", "NVK_PATH")
+def missing_nvk_libs():
+    libdir = get_nvk_libdir()
+    if not libdir:
+        return ["lib" + NVK_WHOLE_LIB + ".a"]
 
+    missing = ["lib" + lib + ".a" for lib in [NVK_WHOLE_LIB] + NVK_LIBS]
+    missing = [name for name in missing if not os.path.isfile(libdir + "/" + name)]
 
-def get_horizon_path():
-    path = _arg("horizon_path", "HORIZON_PATH")
-    if path:
-        return path
-
-    nvk = get_nvk_path()
-    if not nvk:
-        return ""
-
-    # scripts/package-horizon.sh writes build/pkg beside build/mesa-nvk.
-    return os.path.dirname(nvk) + "/pkg"
+    portlibs = os.path.dirname(libdir)
+    missing += [
+        "lib" + lib + ".a" for lib in HORIZON_LIBS if not os.path.isfile(portlibs + "/lib" + lib + ".a")
+    ]
+    return missing
 
 
 def has_nvk():
-    nvk = get_nvk_path()
-    return bool(nvk) and os.path.isfile(os.path.join(nvk, NVK_WHOLE_LIB))
+    libdir = get_nvk_libdir()
+    return bool(libdir) and os.path.isfile(libdir + "/lib" + NVK_WHOLE_LIB + ".a")
 
 
 def can_build():
@@ -114,8 +113,6 @@ def get_opts():
     return [
         BoolVariable("touch", "Enable touch events", True),
         BoolVariable("nxlink", "Redirect stdout/stderr to nxlink on debug builds", True),
-        ("nvk_path", "Path to a mesa-nvk-horizon NVK build directory; enables the Vulkan driver", get_nvk_path()),
-        ("horizon_path", "Path to a packaged horizon_gpu tree; defaults to pkg/ beside nvk_path", get_horizon_path()),
     ]
 
 
@@ -211,38 +208,35 @@ def configure(env: "Environment"):
         env.Append(CPPDEFINES=["NXLINK_ENABLED"])
 
     if env["vulkan"]:
-        nvk = (env["nvk_path"] or get_nvk_path()).replace("\\", "/").rstrip("/")
-        horizon = (env["horizon_path"] or get_horizon_path()).replace("\\", "/").rstrip("/")
-
-        archives = [nvk + "/" + NVK_WHOLE_LIB] + [nvk + "/" + lib for lib in NVK_LIBS]
-        archives += [horizon + "/" + lib for lib in HORIZON_LIBS]
-
-        missing = [a for a in archives if not os.path.isfile(a)]
+        missing = missing_nvk_libs()
         if missing:
             print("Vulkan is enabled for NX but these mesa-nvk-horizon archives are missing:")
-            for a in missing:
-                print("  " + a)
-            print("Build them with scripts/build-mesa-nvk.sh and scripts/package-horizon.sh,")
-            print("then pass nvk_path= and horizon_path=.")
+            for name in missing:
+                print("  " + name)
+            print("Install the driver into devkitPro with make install in the")
+            print("mesa-nvk-horizon tree, or use an image that already ships it.")
             sys.exit(255)
 
         env.Append(CPPDEFINES=["VULKAN_ENABLED", "VK_USE_PLATFORM_VI_NN"])
-        env.Append(CCFLAGS=["-isystem", horizon + "/include"])
 
         # The whole driver goes in LINKFLAGS, ahead of the engine objects. The
         # only symbol the engine takes from it is vk_icdGetInstanceProcAddr,
         # which is in libnvk.a and therefore always present; everything else is
-        # a reference between these archives, which the group resolves.
+        # a reference between these archives, which the group resolves. The
+        # library path has to be repeated here because SCons emits LINKFLAGS
+        # before the LIBPATH directories.
         env.Append(
             LINKFLAGS=[
+                "-L" + portlibs + "/lib/nvk",
+                "-L" + portlibs + "/lib",
                 "-Wl,--start-group",
                 "-Wl,--whole-archive",
-                nvk + "/" + NVK_WHOLE_LIB,
+                "-l" + NVK_WHOLE_LIB,
                 "-Wl,--no-whole-archive",
             ]
-            + [nvk + "/" + lib for lib in NVK_LIBS]
-            + [horizon + "/" + lib for lib in HORIZON_LIBS]
-            + ["-L" + portlibs + "/lib", "-lstdc++", "-lzstd", "-lz", "-Wl,--end-group"]
+            + ["-l" + lib for lib in NVK_LIBS]
+            + ["-l" + lib for lib in HORIZON_LIBS]
+            + ["-lstdc++", "-lzstd", "-lz", "-Wl,--end-group"]
         )
 
     if env["opengl3"]:
