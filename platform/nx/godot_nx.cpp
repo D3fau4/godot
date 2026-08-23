@@ -31,8 +31,15 @@
 #include "main/main.h"
 #include "os_nx.h"
 
+#include "applet_splash.gen.h"
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <zlib.h>
+
+#define APPLET_FB_WIDTH 1280
+#define APPLET_FB_HEIGHT 720
 
 static bool romfs_mounted = false;
 
@@ -62,6 +69,59 @@ static void nx_services_exit() {
 	socketExit();
 }
 
+static bool nx_is_applet_mode() {
+	const AppletType type = appletGetAppletType();
+	return type != AppletType_Application && type != AppletType_SystemApplication;
+}
+
+static void nx_show_applet_splash() {
+	NWindow *win = nwindowGetDefault();
+	Framebuffer fb;
+	framebufferCreate(&fb, win, APPLET_FB_WIDTH, APPLET_FB_HEIGHT, PIXEL_FORMAT_RGBA_8888, 1);
+	framebufferMakeLinear(&fb);
+
+	u32 stride = 0;
+	u8 *framebuf = (u8 *)framebufferBegin(&fb, &stride);
+	memset(framebuf, 0, stride * APPLET_FB_HEIGHT);
+
+	const size_t pixels_size = APPLET_FB_WIDTH * APPLET_FB_HEIGHT * 4;
+	u8 *pixels = (u8 *)calloc(1, pixels_size);
+	if (pixels) {
+		z_stream stream;
+		memset(&stream, 0, sizeof(stream));
+		stream.next_in = (Bytef *)applet_splash_rgba_gz;
+		stream.avail_in = sizeof(applet_splash_rgba_gz);
+		stream.next_out = pixels;
+		stream.avail_out = pixels_size;
+
+		if (inflateInit2(&stream, 16 + MAX_WBITS) == Z_OK) {
+			inflate(&stream, Z_FINISH);
+			inflateEnd(&stream);
+		}
+
+		const size_t row_size = APPLET_FB_WIDTH * 4;
+		for (u32 y = 0; y < APPLET_FB_HEIGHT; y++) {
+			memcpy(framebuf + y * stride, pixels + y * row_size, row_size);
+		}
+
+		free(pixels);
+	}
+
+	framebufferEnd(&fb);
+
+	PadState pad;
+	padConfigureInput(1, HidNpadStyleSet_NpadStandard);
+	padInitializeDefault(&pad);
+	while (appletMainLoop()) {
+		padUpdate(&pad);
+		if (padGetButtonsDown(&pad) != 0) {
+			break;
+		}
+	}
+
+	framebufferClose(&fb);
+}
+
 static bool romfs_has_game_pck() {
 	FILE *f = fopen("romfs:/game.pck", "rb");
 	if (!f) {
@@ -73,6 +133,12 @@ static bool romfs_has_game_pck() {
 
 int main(int argc, char *argv[]) {
 	nx_services_init();
+
+	if (nx_is_applet_mode()) {
+		nx_show_applet_splash();
+		nx_services_exit();
+		return EXIT_SUCCESS;
+	}
 
 #ifdef VULKAN_ENABLED
 	setenv("NVK_I_WANT_A_BROKEN_VULKAN_DRIVER", "1", 0);

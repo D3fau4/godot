@@ -2,6 +2,8 @@
 
 Import("env")
 
+import platform_nx_builders
+
 common_nx = [
     "os_nx.cpp",
     "display_server_nx.cpp",
@@ -18,5 +20,12 @@ if env["opengl3"]:
 
 if env["vulkan"]:
     common_nx.append("vulkan_context_nx.cpp")
+
+env.Depends("#platform/nx/applet_splash.gen.h", "#platform/nx/applet_splash.rgba.gz")
+env.CommandNoCache(
+    "#platform/nx/applet_splash.gen.h",
+    "#platform/nx/applet_splash.rgba.gz",
+    env.Run(platform_nx_builders.make_applet_splash, "Building applet splash header."),
+)
 
 prog = env.add_program("#bin/godot", ["godot_nx.cpp"] + common_nx)
